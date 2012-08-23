@@ -98,6 +98,8 @@ struct spi_device {
 	char			modalias[SPI_NAME_SIZE];
 	int			cs_gpio;	/* chip select gpio */
 
+	struct list_head	detected;
+
 	/*
 	 * likely need more hooks for more protocol options affecting how
 	 * the controller talks to each chip, like:
@@ -316,6 +318,7 @@ struct spi_master {
 	struct device	dev;
 
 	struct list_head list;
+	struct list_head userspace_devices;
 
 	/* other than negative (== assign one dynamically), bus_num is fully
 	 * board-specific.  usually that simplifies to being SOC-specific.

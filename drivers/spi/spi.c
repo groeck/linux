@@ -29,6 +29,7 @@
 #include <linux/mod_devicetable.h>
 #include <linux/spi/spi.h>
 #include <linux/of_gpio.h>
+#include <linux/spi/eeprom.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm_domain.h>
 #include <linux/export.h>
@@ -136,6 +137,164 @@ struct bus_type spi_bus_type = {
 };
 EXPORT_SYMBOL_GPL(spi_bus_type);
 
+/*
+ * Let users instantiate SPI devices through sysfs. This can be used when
+ * platform initialization code doesn't contain the proper data for
+ * whatever reason, or for testing.
+ *
+ * Parameter checking may look overzealous, but we really don't want
+ * the user to provide incorrect parameters.
+ */
+static ssize_t
+spi_sysfs_new_device(struct device *dev, struct device_attribute *attr,
+		     const char *buf, size_t count)
+{
+	struct spi_master *master = container_of(dev, struct spi_master, dev);
+	struct spi_board_info info;
+	struct spi_eeprom eeprom;
+	struct spi_device *spi;
+	char end, d1, d2;
+	unsigned int cs, speed, mode = 0;
+	unsigned int len, pagesize, flags;
+	int res;
+
+	memset(&info, 0, sizeof(struct spi_board_info));
+	memset(&eeprom, 0, sizeof(struct spi_eeprom));
+
+	/* Parse parameters, reject extra parameters */
+	res = sscanf(buf, " %32s %u %u %x %c %10s %u %u %x %c%c",
+		     info.modalias, &cs, &speed, &mode,
+		     &d1, eeprom.name, &len, &pagesize, &flags, &d2,
+		     &end);
+	/* Must have at least name (modalias), chip select, and frequency */
+	if (res < 3) {
+		dev_err(dev, "%s: Can't parse SPI data\n", "new_device");
+		return -EINVAL;
+	}
+	if (mode & ~master->mode_bits) {
+		dev_err(dev, "%s: Unsupported mode\n", "new_device");
+		return -EINVAL;
+	}
+	if (cs >= master->num_chipselect) {
+		dev_err(dev, "%s: Bad chipselect\n", "new_device");
+		return -EINVAL;
+	}
+	if (speed == 0) {
+		dev_err(dev, "%s: Bad speed\n", "new_device");
+		return -EINVAL;
+	}
+	if (!strcmp(info.modalias, "at25")) {
+		/* For EEPROMs, all parameters must be provided and valid */
+		if (res != 11 || d1 != '<' || d2 != '>' || end != '\n' ||
+		    !len || !pagesize || !flags || (flags & ~0x1f)) {
+			dev_err(dev, "%s: Can't parse EEPROM data\n",
+				"new_device");
+			return -EINVAL;
+		}
+		eeprom.byte_len = len;
+		eeprom.page_size = pagesize;
+		eeprom.flags = flags;
+		info.platform_data = &eeprom;
+	} else if (res > 4) {
+		dev_err(dev, "%s: Extra parameters\n", "new_device");
+		return -EINVAL;
+	}
+	info.chip_select = cs;
+	info.mode = mode;
+	info.max_speed_hz = speed;
+
+	spi = spi_new_device(master, &info);
+	if (!spi)
+		return -EINVAL;
+
+	/* Keep track of the added device */
+	mutex_lock(&master->bus_lock_mutex);
+	list_add_tail(&spi->detected, &master->userspace_devices);
+	mutex_unlock(&master->bus_lock_mutex);
+	dev_info(dev, "%s: Instantiated device %s:%u (speed=%u, mode=%u)\n",
+		 "new_device",
+		 info.modalias, info.chip_select, info.max_speed_hz, info.mode);
+
+	return count;
+}
+
+/*
+ * And of course let the users delete the devices they instantiated, if
+ * they got it wrong. This interface can only be used to delete devices
+ * instantiated by spi_sysfs_new_device above. This guarantees that we
+ * don't delete devices to which some kernel code still has references.
+ *
+ * Parameter checking may look overzealous, but we really don't want
+ * the user to delete the wrong device.
+ */
+static ssize_t
+spi_sysfs_delete_device(struct device *dev, struct device_attribute *attr,
+			const char *buf, size_t count)
+{
+	struct spi_master *master = container_of(dev, struct spi_master, dev);
+	struct spi_device *spi, *next;
+	unsigned int cs;
+	char end;
+	int res;
+
+	/* Parse parameters, reject extra parameters */
+	res = sscanf(buf, "%u%c", &cs, &end);
+	if (res < 1) {
+		dev_err(dev, "%s: Can't parse SPI chip select\n",
+			"delete_device");
+		return -EINVAL;
+	}
+	if (res > 1  && end != '\n') {
+		dev_err(dev, "%s: Extra parameters\n", "delete_device");
+		return -EINVAL;
+	}
+
+	/* Make sure the device was added through sysfs */
+	res = -ENOENT;
+	mutex_lock(&master->bus_lock_mutex);
+	list_for_each_entry_safe(spi, next, &master->userspace_devices,
+				 detected) {
+		if (spi->chip_select == cs) {
+			dev_info(dev, "%s: Deleting device %s:%u\n",
+				 "delete_device",
+				 spi->modalias, spi->chip_select);
+
+			list_del(&spi->detected);
+			spi_unregister_device(spi);
+			res = count;
+			break;
+		}
+	}
+	mutex_unlock(&master->bus_lock_mutex);
+
+	if (res < 0)
+		dev_err(dev, "%s: Can't find device in list\n",
+			"delete_device");
+	return res;
+}
+
+static DEVICE_ATTR(new_device, S_IWUSR, NULL, spi_sysfs_new_device);
+static DEVICE_ATTR(delete_device, S_IWUSR, NULL, spi_sysfs_delete_device);
+
+static struct attribute *spi_master_attrs[] = {
+	&dev_attr_new_device.attr,
+	&dev_attr_delete_device.attr,
+	NULL
+};
+
+static struct attribute_group spi_master_attr_group = {
+	.attrs		= spi_master_attrs,
+};
+
+static const struct attribute_group *spi_master_attr_groups[] = {
+	&spi_master_attr_group,
+	NULL
+};
+
+struct device_type spi_master_type = {
+	.groups		= spi_master_attr_groups,
+};
+EXPORT_SYMBOL_GPL(spi_master_type);
 
 static int spi_drv_probe(struct device *dev)
 {
@@ -921,6 +1080,10 @@ static int spi_init_queue(struct spi_master *master)
 {
 	struct sched_param param = { .sched_priority = MAX_RT_PRIO - 1 };
 
+	INIT_LIST_HEAD(&master->queue);
+	INIT_LIST_HEAD(&master->userspace_devices);
+	spin_lock_init(&master->queue_lock);
+
 	master->running = false;
 	master->busy = false;
 
@@ -1444,6 +1607,7 @@ struct spi_master *spi_alloc_master(struct device *dev, unsigned size)
 	master->bus_num = -1;
 	master->num_chipselect = 1;
 	master->dev.class = &spi_master_class;
+	master->dev.type = &spi_master_type;
 	master->dev.parent = get_device(dev);
 	spi_master_set_devdata(master, &master[1]);
 
