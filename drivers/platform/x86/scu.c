@@ -1,0 +1,1360 @@
+/*
+ * SCU board driver
+ *
+ * Copyright (c) 2012, 2014 Guenter Roeck <linux@roeck-us.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
+
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/types.h>
+#include <linux/string.h>
+#include <linux/module.h>
+#include <linux/mutex.h>
+#include <linux/leds.h>
+#include <linux/platform_device.h>
+#include <linux/gpio.h>
+#include <linux/err.h>
+#include <linux/dmi.h>
+#include <linux/i2c.h>
+#include <linux/i2c-gpio.h>
+#ifdef OLD_KERNEL
+#include <linux/i2c/at24.h>
+#else
+#include <linux/platform_data/at24.h>
+#endif
+#include <linux/platform_data/pca953x.h>
+#include <linux/lis3lv02d.h>
+#include <linux/sysfs.h>
+#include <linux/spi/spi.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+#include <asm/processor.h>
+#include <asm/byteorder.h>
+
+#define SCU_EXT0_GPIO_BASE			187
+#define SCU_EXT1_GPIO_BASE			179
+#define SCU_EXT2_GPIO_BASE			171
+#define SCU_EXT3_GPIO_BASE			163
+
+#define SCU_EXT0_GPIO(x)			(SCU_EXT0_GPIO_BASE + (x))
+#define SCU_EXT1_GPIO(x)			(SCU_EXT1_GPIO_BASE + (x))
+#define SCU_EXT2_GPIO(x)			(SCU_EXT2_GPIO_BASE + (x))
+#define SCU_EXT3_GPIO(x)			(SCU_EXT3_GPIO_BASE + (x))
+
+#define SCU_WIRELESS_ENA_1_GPIO			SCU_EXT0_GPIO(0)	/* Read only external discrete status. */
+#define SCU_WIRELESS_ENA_2_GPIO			SCU_EXT0_GPIO(1)	/* Read only external discrete status. */
+#define SCU_WIRELESS_A_RADIO_DISABLE_GPIO	SCU_EXT0_GPIO(2)	/* Wireless A software controlled radio disable. */
+#define SCU_WIRELESS_A_RESET_GPIO		SCU_EXT0_GPIO(3)	/* Wireless A card reset. */
+#define SCU_IN_SPARE_1_GPIO			SCU_EXT0_GPIO(4)	/* Read only external discrete status. */
+#define SCU_IN_SPARE_2_GPIO			SCU_EXT0_GPIO(5)	/* Read only external discrete status. */
+#define SCU_WIRELESS_B_RADIO_DISABLE_GPIO	SCU_EXT0_GPIO(6)	/* Wireless B software controlled radio disable. */
+#define SCU_WIRELESS_B_RESET_GPIO		SCU_EXT0_GPIO(7)	/* Wireless B card reset. */
+
+#define SCU_RD_LED_GPIO				SCU_EXT1_GPIO(0)	/* Front panel LED. */
+#define SCU_WLES_LED_GPIO			SCU_EXT1_GPIO(1)	/* Front panel LED. */
+#define SCU_LD_FAIL_LED_GPIO			SCU_EXT1_GPIO(2)	/* Front panel LED. */
+#define SCU_SW_LED_GPIO				SCU_EXT1_GPIO(3)	/* Front panel LED shared control with the PIC. */
+#define SCU_DISCRETE_OUT_1_GPIO			SCU_EXT1_GPIO(4)	/* External discrete output. */
+#define SCU_DISCRETE_OUT_2_GPIO			SCU_EXT1_GPIO(5)	/* External discrete output. */
+#define SCU_DISCRETE_OUT_3_GPIO			SCU_EXT1_GPIO(6)	/* External discrete output. */
+#define SCU_DISCRETE_OUT_4_GPIO			SCU_EXT1_GPIO(7)	/* External discrete output. */
+
+#define SCU_SD_ACTIVE_1_GPIO			SCU_EXT2_GPIO(0)	/* Front panel LED. */
+#define SCU_SD_ERROR_1_GPIO			SCU_EXT2_GPIO(1)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_2_GPIO			SCU_EXT2_GPIO(2)	/* Front panel LED. */
+#define SCU_SD_ERROR_2_GPIO			SCU_EXT2_GPIO(3)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_3_GPIO			SCU_EXT2_GPIO(4)	/* Front panel LED. */
+#define SCU_SD_ERROR_3_GPIO			SCU_EXT2_GPIO(5)	/* Front panel LED. */
+#define SCU_HUB_6_RESET_GPIO			SCU_EXT2_GPIO(6)	/* Set to 0 to reset, 1 for normal operation.  Hub 6 controls ports 1,3, & 5 */
+#define SCU_HUB_6_CONFIG_STATUS_GPIO		SCU_EXT2_GPIO(7)	/* Upstream Port Speed.  (0=Full, 1=High) */
+
+#define SCU_SD_ACTIVE_4_GPIO			SCU_EXT3_GPIO(0)	/* Front panel LED. */
+#define SCU_SD_ERROR_4_GPIO			SCU_EXT3_GPIO(1)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_5_GPIO			SCU_EXT3_GPIO(2)	/* Front panel LED. */
+#define SCU_SD_ERROR_5_GPIO			SCU_EXT3_GPIO(3)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_6_GPIO			SCU_EXT3_GPIO(4)	/* Front panel LED. */
+#define SCU_SD_ERROR_6_GPIO			SCU_EXT3_GPIO(5)	/* Front panel LED. */
+#define SCU_HUB_2_RESET_GPIO			SCU_EXT3_GPIO(6)	/* Set to 0 to reset, 1 for normal operation.  Hub 2 controls ports 2,4, & 6 */
+#define SCU_HUB_2_CONFIG_STATUS_GPIO		SCU_EXT3_GPIO(7)	/* Upstream Port Speed.  (0=Full, 1=High) */
+
+struct __packed eeprom_data {
+	unsigned short length;			/* 0 - 1 */
+	unsigned char checksum;			/* 2 */
+	unsigned char have_gsm_modem;		/* 3 */
+	unsigned char have_cdma_modem;		/* 4 */
+	unsigned char have_wifi_modem;		/* 5 */
+	unsigned char have_rhdd;		/* 6 */
+	unsigned char have_dvd;			/* 7 */
+	unsigned char have_tape;		/* 8 */
+	unsigned char have_humidity_sensor;	/* 9 */
+	unsigned char have_fiber_channel;	/* 10 */
+	unsigned char lru_part_number[11];	/* 11 - 21 Box Part Number */
+	unsigned char lru_revision[7];		/* 22 - 28 Box Revision */
+	unsigned char lru_serial_number[7];	/* 29 - 35 Box Serial Number */
+	unsigned char lru_date_of_manufacture[7];
+				/* 36 - 42 Box Date of Manufacture */
+	unsigned char board_part_number[11];
+				/* 43 - 53 Base Board Part Number */
+	unsigned char board_revision[7];
+				/* 54 - 60 Base Board Revision */
+	unsigned char board_serial_number[7];
+				/* 61 - 67 Base Board Serial Number */
+	unsigned char board_date_of_manufacture[7];
+				/* 68 - 74 Base Board Date of Manufacture */
+	unsigned char dummy[21];/* 75 - 95 spare/filler */
+};
+
+enum scu_version { scu1, scu2, scu3 };
+
+struct scu_platform_data {
+	const char *board_type;
+	const char *part_number;
+	enum scu_version version;
+	int eeprom_len;
+};
+
+struct scu_data {
+	struct device *dev;			/* Pointer to platform device */
+	struct proc_dir_entry *rave_proc_dir;
+	struct mutex write_lock;
+	struct platform_device *leds_pdev[3];
+	struct i2c_adapter *adapter;		/* I2C adapter */
+	struct spi_master *master;		/* SPI master */
+	struct i2c_client *client[10];		/* I2C clients */
+	struct spi_device *spidev[1];		/* SPI devices */
+	const struct scu_platform_data *pdata;
+	bool have_write_magic;
+	struct memory_accessor *macc;
+	struct eeprom_data eeprom;
+	bool eeprom_accessible;
+	bool eeprom_valid;
+};
+
+#define SCU_EEPROM_LEN_EEPROM	36
+#define SCU_EEPROM_LEN_GEN1	36
+#define SCU_EEPROM_LEN_GEN2	75
+#define SCU_EEPROM_LEN_GEN3	75		/* Preliminary */
+
+#define SCU_PARTNUM_GEN1	"00-5001"
+#define SCU_PARTNUM_GEN2	"00-5010"
+#define SCU_PARTNUM_GEN3	"00-5013"
+
+#define SCU_WRITE_MAGIC		5482328594
+
+/* sysfs */
+
+unsigned char scu_get_checksum(unsigned char *ptr, int len)
+{
+	unsigned char checksum = 0;
+	int i;
+
+	for (i = 0; i < len; i++)
+		checksum += ptr[i];
+	return checksum;
+}
+
+static int scu_update_checksum(struct scu_data *data)
+{
+	unsigned char checksum;
+	int ret;
+
+	data->eeprom.checksum = 0;
+	checksum = scu_get_checksum((unsigned char *)&data->eeprom,
+				    data->pdata->eeprom_len);
+	data->eeprom.checksum = ~checksum + 1;
+	ret = data->macc->write(data->macc, &data->eeprom.checksum,
+			0x300 + offsetof(struct eeprom_data, checksum),
+			sizeof(data->eeprom.checksum));
+	if (ret <= 0)
+		return ret < 0 ? ret : -EIO;
+	return 0;
+}
+
+static ssize_t board_type_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%s\n", data->pdata->board_type);
+}
+
+static ssize_t attribute_magic_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%d\n", data->have_write_magic);
+}
+
+static ssize_t attribute_magic_store(struct device *dev,
+				     struct device_attribute *devattr,
+				     const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	long magic;
+	int err;
+
+	err = kstrtol(buf, 10, &magic);
+	if (err)
+		return err;
+
+	data->have_write_magic = magic == 5482328594;
+
+	return count;
+}
+
+static ssize_t scu_object_show(char *buf, char *data, int len)
+{
+	return snprintf(buf, PAGE_SIZE, "%.*s\n", len, data);
+}
+
+static ssize_t scu_object_store(struct scu_data *data, int offset,
+				const char *in, char *out, ssize_t len)
+{
+	int ret;
+
+	if (!data->have_write_magic)
+		return -EACCES;
+
+	mutex_lock(&data->write_lock);
+	strncpy(out, in, len);
+
+	/* Write entire eeprom if it was marked invalid */
+	if (!data->eeprom_valid) {
+		offset = 0;
+		len = data->pdata->eeprom_len;
+	}
+
+	ret = data->macc->write(data->macc, out, 0x300 + offset, len);
+	if (ret <= 0) {
+		data->eeprom_valid = false;
+		if (ret == 0)
+			ret = -EIO;
+		goto error;
+	}
+	ret = scu_update_checksum(data);
+	if (ret < 0) {
+		data->eeprom_valid = false;
+		goto error;
+	}
+	data->eeprom_valid = true;
+error:
+	mutex_unlock(&data->write_lock);
+	return ret;
+}
+
+static ssize_t lru_part_number_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.lru_part_number,
+			       sizeof(data->eeprom.lru_part_number));
+}
+
+static ssize_t lru_part_number_store(struct device *dev,
+				     struct device_attribute *devattr,
+				     const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret  = scu_object_store(data,
+				offsetof(struct eeprom_data, lru_part_number),
+				buf, data->eeprom.lru_part_number,
+				sizeof(data->eeprom.lru_part_number));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t lru_serial_number_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.lru_serial_number,
+			       sizeof(data->eeprom.lru_serial_number));
+}
+
+static ssize_t lru_serial_number_store(struct device *dev,
+				       struct device_attribute *devattr,
+				       const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data, lru_serial_number),
+				buf, data->eeprom.lru_serial_number,
+				sizeof(data->eeprom.lru_serial_number));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t lru_revision_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.lru_revision,
+			       sizeof(data->eeprom.lru_revision));
+}
+
+static ssize_t lru_revision_store(struct device *dev,
+				  struct device_attribute *devattr,
+				  const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data, lru_revision),
+				buf, data->eeprom.lru_revision,
+				sizeof(data->eeprom.lru_revision));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t lru_date_of_manufacture_show(struct device *dev,
+					    struct device_attribute *attr,
+					    char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.lru_date_of_manufacture,
+			       sizeof(data->eeprom.lru_date_of_manufacture));
+}
+
+static ssize_t lru_date_of_manufacture_store(struct device *dev,
+					     struct device_attribute *devattr,
+					     const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data,
+					 lru_date_of_manufacture),
+				buf, data->eeprom.lru_date_of_manufacture,
+				sizeof(data->eeprom.lru_date_of_manufacture));
+	return ret < 0 ? ret : count;
+}
+static ssize_t board_part_number_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.board_part_number,
+			       sizeof(data->eeprom.board_part_number));
+}
+
+static ssize_t board_part_number_store(struct device *dev,
+				       struct device_attribute *devattr,
+				       const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data, board_part_number),
+				buf, data->eeprom.board_part_number,
+				sizeof(data->eeprom.board_part_number));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t board_serial_number_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.board_serial_number,
+			       sizeof(data->eeprom.board_serial_number));
+}
+
+static ssize_t board_serial_number_store(struct device *dev,
+					 struct device_attribute *devattr,
+					 const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+			offsetof(struct eeprom_data, board_serial_number),
+			buf, data->eeprom.board_serial_number,
+			sizeof(data->eeprom.board_serial_number));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t board_revision_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.board_revision,
+			       sizeof(data->eeprom.board_revision));
+}
+
+static ssize_t board_revision_store(struct device *dev,
+				   struct device_attribute *devattr,
+				   const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data, board_revision),
+				buf, data->eeprom.board_revision,
+				sizeof(data->eeprom.board_revision));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t board_date_of_manufacture_show(struct device *dev,
+					     struct device_attribute *attr,
+					     char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.board_date_of_manufacture,
+			       sizeof(data->eeprom.board_date_of_manufacture));
+}
+
+static ssize_t board_date_of_manufacture_store(struct device *dev,
+					      struct device_attribute *devattr,
+					      const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data,
+					 board_date_of_manufacture),
+				buf, data->eeprom.board_date_of_manufacture,
+				sizeof(data->eeprom.board_date_of_manufacture));
+	return ret < 0 ? ret : count;
+}
+
+static DEVICE_ATTR_RO(board_type);
+static DEVICE_ATTR_RW(attribute_magic);
+static DEVICE_ATTR_RW(lru_part_number);
+static DEVICE_ATTR_RW(lru_serial_number);
+static DEVICE_ATTR_RW(lru_revision);
+static DEVICE_ATTR_RW(lru_date_of_manufacture);	/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_part_number);
+static DEVICE_ATTR_RW(board_serial_number);
+static DEVICE_ATTR_RW(board_revision);
+static DEVICE_ATTR_RW(board_date_of_manufacture);
+
+static struct attribute *scu_base_attrs[] = {
+	&dev_attr_board_type.attr,
+	NULL,
+};
+
+static struct attribute_group scu_base_group = {
+	.attrs = scu_base_attrs,
+};
+
+static struct attribute *scu_eeprom_attrs[] = {
+	&dev_attr_attribute_magic.attr,
+	&dev_attr_lru_part_number.attr,			/* 1 */
+	&dev_attr_lru_serial_number.attr,
+	&dev_attr_lru_revision.attr,
+	&dev_attr_lru_date_of_manufacture.attr,		/* 4 */
+	&dev_attr_board_part_number.attr,
+	&dev_attr_board_serial_number.attr,
+	&dev_attr_board_revision.attr,
+	&dev_attr_board_date_of_manufacture.attr,
+	NULL
+};
+
+static umode_t scu_attr_is_visible(struct kobject *kobj, struct attribute *attr,
+				   int index)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct scu_data *data = dev_get_drvdata(dev);
+	umode_t mode = attr->mode;
+
+	/*
+	 * If the eeprom has not been processed, disable its attributes.
+	 * If it has been processed but is not accessible, disable
+	 * write accesses to it.
+	 */
+	if (index >= 1 && !data->eeprom_accessible)
+			mode &= S_IRUGO;
+
+	if (index >= 4 && data->pdata->version == scu1)
+		return 0;
+
+	return mode;
+}
+
+static struct attribute_group scu_eeprom_group = {
+	.attrs = scu_eeprom_attrs,
+	.is_visible = scu_attr_is_visible,
+};
+
+/* platform data */
+
+static struct gpio_led pca_gpio_leds1[] = {
+	{			/* bit 0 */
+	 .name = "scu_status:g:RD",
+	 .gpio = SCU_RD_LED_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "heartbeat",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 1 */
+	 .name = "scu_status:a:WLess",
+	 .gpio = SCU_WLES_LED_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 2 */
+	 .name = "scu_status:r:LDFail",
+	 .gpio = SCU_LD_FAIL_LED_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 3 */
+	 .name = "scu_status:a:SW",
+	 .gpio = SCU_SW_LED_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 }
+};
+
+static struct gpio_led_platform_data pca_gpio_led_info1 = {
+	.leds = pca_gpio_leds1,
+	.num_leds = ARRAY_SIZE(pca_gpio_leds1),
+};
+
+static struct gpio_led pca_gpio_leds2[] = {
+	{			/* bit 0 */
+	 .name = "SD1:g:active",
+	 .gpio = SCU_SD_ACTIVE_1_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 1 */
+	 .name = "SD1:a:error",
+	 .gpio = SCU_SD_ERROR_1_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 2 */
+	 .name = "SD2:g:active",
+	 .gpio = SCU_SD_ACTIVE_2_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 3 */
+	 .name = "SD2:a:error",
+	 .gpio = SCU_SD_ERROR_2_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 4 */
+	 .name = "SD3:g:active",
+	 .gpio = SCU_SD_ACTIVE_3_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 5 */
+	 .name = "SD3:a:error",
+	 .gpio = SCU_SD_ERROR_3_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 }
+};
+
+static struct gpio_led_platform_data pca_gpio_led_info2 = {
+	.leds = pca_gpio_leds2,
+	.num_leds = ARRAY_SIZE(pca_gpio_leds2),
+};
+
+static struct gpio_led pca_gpio_leds3[] = {
+	{			/* bit 0 */
+	 .name = "SD4:g:active",
+	 .gpio = SCU_SD_ACTIVE_4_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 1 */
+	 .name = "SD4:a:error",
+	 .gpio = SCU_SD_ERROR_4_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 2 */
+	 .name = "SD5:g:active",
+	 .gpio = SCU_SD_ACTIVE_5_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 3 */
+	 .name = "SD5:a:error",
+	 .gpio = SCU_SD_ERROR_5_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 4 */
+	 .name = "SD6:g:active",
+	 .gpio = SCU_SD_ACTIVE_6_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 },
+	{			/* bit 5 */
+	 .name = "SD6:a:error",
+	 .gpio = SCU_SD_ERROR_6_GPIO,
+	 .active_low = 1,
+	 .default_trigger = "none",
+	 .default_state = LEDS_GPIO_DEFSTATE_OFF,
+	 }
+};
+
+static struct gpio_led_platform_data pca_gpio_led_info3 = {
+	.leds = pca_gpio_leds3,
+	.num_leds = ARRAY_SIZE(pca_gpio_leds3),
+};
+
+static void __init pca_leds_register(struct device *parent,
+				     struct scu_data *data)
+{
+	data->leds_pdev[0] =
+		platform_device_register_data(parent, "leds-gpio", 1,
+					      &pca_gpio_led_info1,
+					      sizeof(pca_gpio_led_info1));
+	data->leds_pdev[1] =
+		platform_device_register_data(parent, "leds-gpio", 2,
+					      &pca_gpio_led_info2,
+					      sizeof(pca_gpio_led_info2));
+	data->leds_pdev[2] =
+		platform_device_register_data(parent, "leds-gpio", 3,
+					      &pca_gpio_led_info3,
+					      sizeof(pca_gpio_led_info3));
+}
+
+static void pca_leds_unregister(struct scu_data *data)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(data->leds_pdev); i++)
+		platform_device_unregister(data->leds_pdev[i]);
+}
+
+static const char *pca9538_ext0_gpio_names[8] = {
+	"pca9538_ext0:wireless_ena_1",
+	"pca9538_ext0:wireless_ena_2",
+	"pca9538_ext0:wireless_a_radio_disable",
+	"pca9538_ext0:wireless_a_reset",
+	"pca9538_ext0:in_spare_1",
+	"pca9538_ext0:in_spare_2",
+	"pca9538_ext0:wireless_b_radio_disable",
+	"pca9538_ext0:wireless_b_reset",
+};
+
+static const char *pca9538_ext1_gpio_names[8] = {
+	"pca9538_ext1:rd_led_on",
+	"pca9538_ext1:wless_led_on",
+	"pca9538_ext1:ld_fail_led_on",
+	"pca9538_ext1:sw_led_on",
+	"pca9538_ext1:discrete_out_1",
+	"pca9538_ext1:discrete_out_2",
+	"pca9538_ext1:discrete_out_3",
+	"pca9538_ext1:discrete_out_4",
+};
+
+static const char *pca9538_ext2_gpio_names[8] = {
+	"pca9538_ext2:sd_active_1",
+	"pca9538_ext2:sd_error_1",
+	"pca9538_ext2:sd_active_2",
+	"pca9538_ext2:sd_error_2",
+	"pca9538_ext2:sd_active_3",
+	"pca9538_ext2:sd_error_3",
+	"pca9538_ext2:hub_6_reset",
+	"pca9538_ext2:hub_6_config_status",
+};
+
+static const char *pca9538_ext3_gpio_names[8] = {
+	"pca9538_ext3:sd_active_4",
+	"pca9538_ext3:sd_error_4",
+	"pca9538_ext3:sd_active_5",
+	"pca9538_ext3:sd_error_5",
+	"pca9538_ext3:sd_active_6",
+	"pca9538_ext3:sd_error_6",
+	"pca9538_ext3:hub_2_reset",
+	"pca9538_ext3:hub_2_config_status",
+};
+
+static int pca9538_ext0_setup(struct i2c_client *client,
+			      unsigned gpio_base, unsigned ngpio, void *context)
+{
+	gpio_request(SCU_WIRELESS_ENA_1_GPIO, 0);
+	gpio_direction_input(SCU_WIRELESS_ENA_1_GPIO);
+	gpio_export(SCU_WIRELESS_ENA_1_GPIO, 0);
+
+	gpio_request(SCU_WIRELESS_ENA_2_GPIO, 0);
+	gpio_direction_input(SCU_WIRELESS_ENA_2_GPIO);
+	gpio_export(SCU_WIRELESS_ENA_2_GPIO, 0);
+
+	gpio_request(SCU_WIRELESS_A_RADIO_DISABLE_GPIO, 0);
+	gpio_direction_output(SCU_WIRELESS_A_RADIO_DISABLE_GPIO, 1);
+	gpio_export(SCU_WIRELESS_A_RADIO_DISABLE_GPIO, 0);
+
+	gpio_request(SCU_WIRELESS_A_RESET_GPIO, 0);
+	gpio_direction_output(SCU_WIRELESS_A_RESET_GPIO, 1);
+	gpio_export(SCU_WIRELESS_A_RESET_GPIO, 0);
+
+	gpio_request(SCU_IN_SPARE_1_GPIO, 0);
+	gpio_direction_input(SCU_IN_SPARE_1_GPIO);
+	gpio_export(SCU_IN_SPARE_1_GPIO, 0);
+
+	gpio_request(SCU_IN_SPARE_2_GPIO, 0);
+	gpio_direction_input(SCU_IN_SPARE_2_GPIO);
+	gpio_export(SCU_IN_SPARE_2_GPIO, 0);
+
+	gpio_request(SCU_WIRELESS_B_RADIO_DISABLE_GPIO, 0);
+	gpio_direction_output(SCU_WIRELESS_B_RADIO_DISABLE_GPIO, 1);
+	gpio_export(SCU_WIRELESS_B_RADIO_DISABLE_GPIO, 0);
+
+	gpio_request(SCU_WIRELESS_B_RESET_GPIO, 0);
+	gpio_direction_output(SCU_WIRELESS_B_RESET_GPIO, 1);
+	gpio_export(SCU_WIRELESS_B_RESET_GPIO, 0);
+
+	return 0;
+}
+
+static int pca9538_ext1_setup(struct i2c_client *client,
+			      unsigned gpio_base, unsigned ngpio, void *context)
+{
+	gpio_request(SCU_DISCRETE_OUT_1_GPIO, 0);
+	gpio_direction_output(SCU_DISCRETE_OUT_1_GPIO, 0);
+	gpio_export(SCU_DISCRETE_OUT_1_GPIO, 0);
+
+	gpio_request(SCU_DISCRETE_OUT_2_GPIO, 0);
+	gpio_direction_output(SCU_DISCRETE_OUT_2_GPIO, 0);
+	gpio_export(SCU_DISCRETE_OUT_2_GPIO, 0);
+
+	gpio_request(SCU_DISCRETE_OUT_3_GPIO, 0);
+	gpio_direction_output(SCU_DISCRETE_OUT_3_GPIO, 0);
+	gpio_export(SCU_DISCRETE_OUT_3_GPIO, 0);
+
+	gpio_request(SCU_DISCRETE_OUT_4_GPIO, 0);
+	gpio_direction_output(SCU_DISCRETE_OUT_4_GPIO, 0);
+	gpio_export(SCU_DISCRETE_OUT_4_GPIO, 0);
+
+	return 0;
+}
+
+static int pca9538_ext2_setup(struct i2c_client *client,
+			      unsigned gpio_base, unsigned ngpio, void *context)
+{
+	gpio_request(SCU_HUB_6_RESET_GPIO, 0);
+	gpio_direction_output(SCU_HUB_6_RESET_GPIO, 1);
+	gpio_export(SCU_HUB_6_RESET_GPIO, 0);
+
+	gpio_request(SCU_HUB_6_CONFIG_STATUS_GPIO, 0);
+	gpio_direction_input(SCU_HUB_6_CONFIG_STATUS_GPIO);
+	gpio_export(SCU_HUB_6_CONFIG_STATUS_GPIO, 0);
+
+	return 0;
+}
+
+static int pca9538_ext3_setup(struct i2c_client *client,
+			      unsigned gpio_base, unsigned ngpio, void *context)
+{
+	gpio_request(SCU_HUB_2_RESET_GPIO, 0);
+	gpio_direction_output(SCU_HUB_2_RESET_GPIO, 1);
+	gpio_export(SCU_HUB_2_RESET_GPIO, 0);
+
+	gpio_request(SCU_HUB_2_CONFIG_STATUS_GPIO, 0);
+	gpio_direction_input(SCU_HUB_2_CONFIG_STATUS_GPIO);
+	gpio_export(SCU_HUB_2_CONFIG_STATUS_GPIO, 0);
+
+	return 0;
+}
+
+static int pca9538_ext0_teardown(struct i2c_client *client,
+				 unsigned gpio_base, unsigned ngpio,
+				 void *context)
+{
+	gpio_unexport(SCU_WIRELESS_ENA_1_GPIO);
+	gpio_free(SCU_WIRELESS_ENA_1_GPIO);
+
+	gpio_unexport(SCU_WIRELESS_ENA_2_GPIO);
+	gpio_free(SCU_WIRELESS_ENA_2_GPIO);
+
+	gpio_unexport(SCU_WIRELESS_A_RADIO_DISABLE_GPIO);
+	gpio_free(SCU_WIRELESS_A_RADIO_DISABLE_GPIO);
+
+	gpio_unexport(SCU_WIRELESS_A_RESET_GPIO);
+	gpio_free(SCU_WIRELESS_A_RESET_GPIO);
+
+	gpio_unexport(SCU_IN_SPARE_1_GPIO);
+	gpio_free(SCU_IN_SPARE_1_GPIO);
+
+	gpio_unexport(SCU_IN_SPARE_2_GPIO);
+	gpio_free(SCU_IN_SPARE_2_GPIO);
+
+	gpio_unexport(SCU_WIRELESS_B_RADIO_DISABLE_GPIO);
+	gpio_free(SCU_WIRELESS_B_RADIO_DISABLE_GPIO);
+
+	gpio_unexport(SCU_WIRELESS_B_RESET_GPIO);
+	gpio_free(SCU_WIRELESS_B_RESET_GPIO);
+
+	return 0;
+}
+
+static int pca9538_ext1_teardown(struct i2c_client *client,
+				 unsigned gpio_base, unsigned ngpio,
+				 void *context)
+{
+	gpio_unexport(SCU_DISCRETE_OUT_1_GPIO);
+	gpio_free(SCU_DISCRETE_OUT_1_GPIO);
+
+	gpio_unexport(SCU_DISCRETE_OUT_2_GPIO);
+	gpio_free(SCU_DISCRETE_OUT_2_GPIO);
+
+	gpio_unexport(SCU_DISCRETE_OUT_3_GPIO);
+	gpio_free(SCU_DISCRETE_OUT_3_GPIO);
+
+	gpio_unexport(SCU_DISCRETE_OUT_4_GPIO);
+	gpio_free(SCU_DISCRETE_OUT_4_GPIO);
+
+	return 0;
+}
+
+static int pca9538_ext2_teardown(struct i2c_client *client,
+				 unsigned gpio_base, unsigned ngpio,
+				 void *context)
+{
+	gpio_unexport(SCU_HUB_6_RESET_GPIO);
+	gpio_free(SCU_HUB_6_RESET_GPIO);
+
+	gpio_unexport(SCU_HUB_6_CONFIG_STATUS_GPIO);
+	gpio_free(SCU_HUB_6_CONFIG_STATUS_GPIO);
+
+	return 0;
+}
+
+static int pca9538_ext3_teardown(struct i2c_client *client,
+				 unsigned gpio_base, unsigned ngpio,
+				 void *context)
+{
+	gpio_unexport(SCU_HUB_2_RESET_GPIO);
+	gpio_free(SCU_HUB_2_RESET_GPIO);
+
+	gpio_unexport(SCU_HUB_2_CONFIG_STATUS_GPIO);
+	gpio_free(SCU_HUB_2_CONFIG_STATUS_GPIO);
+
+	return 0;
+}
+
+static struct pca953x_platform_data scu_pca953x_pdata[] = {
+	[0] = {.gpio_base = SCU_EXT0_GPIO_BASE,
+	       .setup = pca9538_ext0_setup,
+	       .teardown = pca9538_ext0_teardown,
+	       .names = pca9538_ext0_gpio_names},
+	[1] = {.gpio_base = SCU_EXT1_GPIO_BASE,
+	       .setup = pca9538_ext1_setup,
+	       .teardown = pca9538_ext1_teardown,
+	       .names = pca9538_ext1_gpio_names},
+	[2] = {.gpio_base = SCU_EXT2_GPIO_BASE,
+	       .setup = pca9538_ext2_setup,
+	       .teardown = pca9538_ext2_teardown,
+	       .names = pca9538_ext2_gpio_names},
+	[3] = {.gpio_base = SCU_EXT3_GPIO_BASE,
+	       .setup = pca9538_ext3_setup,
+	       .teardown = pca9538_ext3_teardown,
+	       .names = pca9538_ext3_gpio_names},
+};
+
+static struct scu_platform_data scu_platform_data[] = {
+	[scu1] = {
+		.board_type = "SCU1 x86",
+		.part_number = SCU_PARTNUM_GEN1,
+		.version = scu1,
+		.eeprom_len = SCU_EEPROM_LEN_GEN1,
+	},
+	[scu2] = {
+		.board_type = "SCU2 x86",
+		.part_number = SCU_PARTNUM_GEN2,
+		.version = scu2,
+		.eeprom_len = SCU_EEPROM_LEN_GEN2,
+	},
+	[scu3] = {
+		.board_type = "SCU3 x86",
+		.part_number = SCU_PARTNUM_GEN3,
+		.version = scu3,
+		.eeprom_len = SCU_EEPROM_LEN_GEN3,
+	},
+};
+
+/*
+ * This is the callback function when a a specifc at24 eeprom is found.
+ * Its reads out the eeprom contents via the read function passed back in via
+ * struct memory_accessor. It then calls part_number_proc, serial_number_proc,
+ * and dom_proc to populate the procfs entries for each specific field.
+ */
+static void populate_unit_info(struct memory_accessor *mem_accessor,
+			       void *context)
+{
+	struct scu_data *data = context;
+	struct scu_platform_data *pdata;
+	unsigned char *ptr;
+	int i, len;
+
+	data->macc = mem_accessor;
+
+	ptr = (unsigned char *)&data->eeprom;
+	/* Read Data structure from EEPROM */
+	if (mem_accessor->read(mem_accessor, ptr, 0x300,
+			       sizeof(data->eeprom)) <= 0) {
+		dev_err(data->dev, "Failed to read eeprom data\n");
+		goto error;
+	}
+
+	/* EEPROM is accessible, permit write access to it */
+	data->eeprom_accessible = true;
+
+	/* Sanity check */
+	if (le16_to_cpu(data->eeprom.length) != SCU_EEPROM_LEN_EEPROM) {
+		dev_err(data->dev,
+			"Bad eeprom data length: Expected %d, got %d\n",
+			SCU_EEPROM_LEN_EEPROM,
+			le16_to_cpu(data->eeprom.length));
+		goto error;
+	}
+
+	/* Update platform data based on part number retrieved from EEPROM */
+	for (i = 0; i < ARRAY_SIZE(scu_platform_data); i++) {
+		pdata = &scu_platform_data[i];
+		if (!strncmp(data->eeprom.lru_part_number, pdata->part_number,
+			     strlen(pdata->part_number))) {
+			data->pdata = pdata;
+			break;
+		}
+	}
+
+	len = data->pdata->eeprom_len;
+
+	/* Validate checksum */
+	if (scu_get_checksum(ptr, len)) {
+		dev_err(data->dev,
+			"EEPROM data checksum error: expected 0, got 0x%x [len=%d]\n",
+			scu_get_checksum(ptr, len), len);
+		/* TBD: Do we want to clear the eeprom in this case ? */
+		goto error_noclean;
+	}
+
+	/* Update sysfs attributes based on retrieved platform data */
+	data->eeprom_valid = true;
+	goto done;
+
+error:
+	memset(&data->eeprom, '\0', sizeof(data->eeprom));
+	data->eeprom.length = cpu_to_le16(SCU_EEPROM_LEN_EEPROM);
+error_noclean:
+	data->eeprom_valid = false;
+done:
+	sysfs_create_group(&data->dev->kobj, &scu_eeprom_group);
+}
+
+static struct at24_platform_data at24c08 = {
+	.byte_len = 1024,
+	.page_size = 16,
+	.setup = populate_unit_info,
+};
+
+static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
+	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
+	    LIS3_CLICK_SINGLE_Z,
+	/* Limits are 0.5g * value */
+	.click_thresh_x = 8,
+	.click_thresh_y = 8,
+	.click_thresh_z = 10,
+	/* Click must be longer than time limit */
+	.click_time_limit = 9,
+	/* Kind of debounce filter */
+	.click_latency = 50,
+
+	/* Limits for all axis. millig-value / 18 to get HW values */
+	.wakeup_flags = LIS3_WAKEUP_X_HI | LIS3_WAKEUP_Y_HI,
+	.wakeup_thresh = 800 / 18,
+	.wakeup_flags2 = LIS3_WAKEUP_Z_HI,
+	.wakeup_thresh2 = 900 / 18,
+
+	.hipass_ctrl = LIS3_HIPASS1_DISABLE | LIS3_HIPASS2_DISABLE,
+
+	.axis_x = LIS3_DEV_X,
+	.axis_y = LIS3_INV_DEV_Y,
+	.axis_z = LIS3_INV_DEV_Z,
+	.st_min_limits = {-32, 3, 3},
+	.st_max_limits = {-3, 32, 32},
+};
+
+static struct i2c_board_info scu_i2c_info[] = {
+	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
+		.platform_data = &scu_lis3lv02d_data},
+	{ I2C_BOARD_INFO("scu_pic", 0x20)},
+	{ I2C_BOARD_INFO("sc18is602", 0x28)},
+	{ I2C_BOARD_INFO("at24", 0x54),
+		.platform_data = &at24c08},
+	{ I2C_BOARD_INFO("ds1682", 0x6b)},
+	{ I2C_BOARD_INFO("pca9538", 0x70),
+		.platform_data = &scu_pca953x_pdata[0],},
+	{ I2C_BOARD_INFO("pca9538", 0x71),
+		.platform_data = &scu_pca953x_pdata[1],},
+	{ I2C_BOARD_INFO("pca9538", 0x72),
+		.platform_data = &scu_pca953x_pdata[2],},
+	{ I2C_BOARD_INFO("pca9538", 0x73),
+		.platform_data = &scu_pca953x_pdata[3],},
+};
+
+static struct spi_board_info scu_spi_info[] = {
+	{
+#ifdef TESTING
+	 .modalias = "lm70",
+	 .bus_num = 0,
+	 .chip_select = 0,
+	 .max_speed_hz = 1000000,
+	 .mode = SPI_MODE_0,
+#else
+	 .modalias = "robodebug",
+	 .bus_num = 0,
+	 .chip_select = 0,
+	 .max_speed_hz = 2000000,
+	 .mode = SPI_MODE_3,
+#endif
+	 },
+};
+
+static int scu_i2c_adap_name_match(struct device *dev, void *data)
+{
+	struct i2c_adapter *adap = i2c_verify_adapter(dev);
+
+	if (!adap)
+		return false;
+
+	return !strcmp(adap->name, (char *)data);
+}
+
+static struct i2c_adapter *scu_find_i2c_adapter(char *name)
+{
+	struct device *dev;
+	struct i2c_adapter *adap;
+
+	dev = bus_find_device(&i2c_bus_type, NULL, name,
+			      scu_i2c_adap_name_match);
+	if (!dev)
+		return NULL;
+
+	adap = i2c_verify_adapter(dev);
+	if (!adap)
+		put_device(dev);
+
+	return adap;
+}
+
+const char *scu_modules[] = {
+	"kempld-core",
+	"i2c-kempld",
+	"spi-sc18is602",
+	NULL
+};
+
+static void scu_request_modules(bool wait)
+{
+	struct module *m;
+	int i;
+
+	/*
+	 * Try to load modules which we are going to need later on.
+	 * Fail silently; if loading the module is not successful
+	 * we'll bail out later on.
+	 */
+	for (i = 0; scu_modules[i]; i++) {
+		mutex_lock(&module_mutex);
+		m = find_module(scu_modules[i]);
+		mutex_unlock(&module_mutex);
+		if (!m) {
+			if (wait)
+				request_module(scu_modules[i]);
+			else
+				request_module_nowait(scu_modules[i]);
+		}
+	}
+}
+
+static int proc_board_type_show(struct seq_file *m, void *v)
+{
+	struct scu_data *data = (struct scu_data *)m->private;
+
+	seq_printf(m, "%s\n", data->pdata->board_type);
+
+	return 0;
+}
+
+static int scu_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, proc_board_type_show, PDE_DATA(inode));
+}
+
+static const struct file_operations scu_proc_fops = {
+	.owner = THIS_MODULE,
+	.open = scu_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int scu_probe(struct platform_device *pdev)
+{
+	struct proc_dir_entry *rave_board_type;
+	struct device *dev = &pdev->dev;
+	struct i2c_adapter *adapter;
+	struct spi_master *master;
+	struct scu_data *data;
+	int i, ret;
+
+	scu_request_modules(true);
+
+	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	platform_set_drvdata(pdev, data);
+
+	data->pdata = dev_get_platdata(dev);
+	if (!data->pdata)
+		return -ENODEV;
+	data->dev = dev;
+
+	mutex_init(&data->write_lock);
+
+	/*
+	 * The adapter driver should have been loaded by now.
+	 * If not, try again later.
+	 */
+	adapter = scu_find_i2c_adapter("i2c-kempld");
+	if (!adapter)
+		return -EPROBE_DEFER;
+	data->adapter = adapter;
+
+	data->rave_proc_dir = proc_mkdir("rave", NULL);
+	if (!data->rave_proc_dir) {
+		ret = -ENODEV;
+		goto error_put;
+	}
+	rave_board_type = proc_create_data("board_type", 0, data->rave_proc_dir,
+					   &scu_proc_fops, data);
+	if (rave_board_type == NULL) {
+		ret = -ENODEV;
+		goto error_remove;
+	}
+
+	at24c08.context = data;
+
+	for (i = 0; i < ARRAY_SIZE(scu_i2c_info); i++) {
+		data->client[i] = i2c_new_device(adapter, &scu_i2c_info[i]);
+		if (!data->client[i]) {
+			/*
+			 * Unfortunately this call does not tell us
+			 * why it failed. Pick the most likely reason.
+			 */
+			ret = -EBUSY;
+			goto error_i2c_client;
+		}
+	}
+
+	/* SPI bus number matches i2c bus number (set by sc18is602 driver) */
+	master = spi_busnum_to_master(adapter->nr);
+	if (!master) {
+		dev_err(dev, "Failed to find SPI adapter\n");
+		ret = -ENODEV;
+		goto error_i2c_client;
+	}
+	data->master = master;
+
+	for (i = 0; i < ARRAY_SIZE(scu_spi_info); i++) {
+		scu_spi_info[i].bus_num = master->bus_num;
+		data->spidev[i] = spi_new_device(master, &scu_spi_info[i]);
+		if (!data->spidev[i]) {
+			ret = -ENOMEM;
+			goto error_spidev;
+		}
+	}
+
+	pca_leds_register(dev, data);
+	ret = sysfs_create_group(&dev->kobj, &scu_base_group);
+	if (ret)
+		goto error_group;
+
+	return 0;
+
+error_group:
+	pca_leds_unregister(data);
+error_spidev:
+	for (i = 0; i < ARRAY_SIZE(data->spidev) && data->spidev[i]; i++)
+		spi_unregister_device(data->spidev[i]);
+	spi_master_put(data->master);
+error_i2c_client:
+	for (i = 0; i < ARRAY_SIZE(data->client) && data->client[i]; i++)
+		i2c_unregister_device(data->client[i]);
+error_remove:
+	proc_remove(data->rave_proc_dir);
+error_put:
+	put_device(&adapter->dev);
+	return ret;
+}
+
+static int __exit scu_remove(struct platform_device *pdev)
+{
+	struct scu_data *data = platform_get_drvdata(pdev);
+	int i;
+
+	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
+	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
+
+	pca_leds_unregister(data);
+
+	for (i = 0; i < ARRAY_SIZE(data->spidev) && data->spidev[i]; i++)
+		spi_unregister_device(data->spidev[i]);
+	spi_master_put(data->master);
+
+	for (i = 0; i < ARRAY_SIZE(data->client) && data->client[i]; i++)
+		i2c_unregister_device(data->client[i]);
+
+	proc_remove(data->rave_proc_dir);
+
+	put_device(&data->adapter->dev);
+
+	return 0;
+}
+
+static struct platform_driver scu_driver = {
+	.probe = scu_probe,
+	.remove = __exit_p(scu_remove),
+	.driver = {
+		.name = "scu",
+		.owner = THIS_MODULE,
+	},
+};
+
+static struct platform_device *scu_pdev;
+
+static int scu_create_platform_device(const struct dmi_system_id *id)
+{
+	struct scu_platform_data *pdata = id->driver_data;
+	int ret;
+
+	if (pdata == NULL)
+		return -EINVAL;
+
+	scu_pdev = platform_device_alloc("scu", -1);
+	if (!scu_pdev)
+		return -ENOMEM;
+
+	ret = platform_device_add_data(scu_pdev, pdata, sizeof(*pdata));
+	if (ret)
+		goto err;
+
+	ret = platform_device_add(scu_pdev);
+	if (ret)
+		goto err;
+
+	return 0;
+err:
+	platform_device_put(scu_pdev);
+	return ret;
+}
+
+static const struct dmi_system_id scu_device_table[] __initconst = {
+	{
+		.ident = "IMS SCU version 1, Core 2 Duo",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
+			DMI_MATCH(DMI_BOARD_NAME, "PXT"),
+		},
+		.driver_data = &scu_platform_data[scu1],
+		.callback = scu_create_platform_device,
+	},
+	{
+		.ident = "IMS SCU version 2, Ivy Bridge",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
+			DMI_MATCH(DMI_BOARD_NAME, "COMe-bSC6"),
+		},
+		.driver_data = &scu_platform_data[scu2],
+		.callback = scu_create_platform_device,
+	},
+	{
+		.ident = "IMS SCU version 2, Ivy Bridge",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
+			DMI_MATCH(DMI_BOARD_NAME, "COMe-bIP2"),
+		},
+		.driver_data = &scu_platform_data[scu2],
+		.callback = scu_create_platform_device,
+	},
+	{
+		.ident = "IMS SCU version 2, Sandy Bridge",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
+			DMI_MATCH(DMI_BOARD_NAME, "COMe-bSC2"),
+		},
+		.driver_data = &scu_platform_data[scu2],
+		.callback = scu_create_platform_device,
+	},
+	{ }
+};
+MODULE_DEVICE_TABLE(dmi, scu_device_table);
+
+static int __init scu_init(void)
+{
+	if (!dmi_check_system(scu_device_table))
+		return -ENODEV;
+
+	scu_request_modules(false);
+
+	return platform_driver_register(&scu_driver);
+}
+
+static void __exit scu_exit(void)
+{
+	if (scu_pdev)
+		platform_device_unregister(scu_pdev);
+
+	platform_driver_unregister(&scu_driver);
+}
+
+module_init(scu_init);
+module_exit(scu_exit);
+
+MODULE_ALIAS("platform:scu");
+MODULE_LICENSE("GPL");
