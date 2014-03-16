@@ -515,6 +515,23 @@ config VEXPRESS_SYSCFG
 	  bus. System Configuration interface is one of the possible means
 	  of generating transactions on this bus.
 
+config SCU_PIC
+	bool "SCU pic driver"
+	help
+	  This is the SCU pic driver
+
+config SPI_ROBODEBUG
+	bool "Broadcom RoboSwitch debug driver"
+	depends on SPI
+	help
+	  Debug driver for Broadcom RoboSwitch
+
+config SPI_ROBODEBUG_SPI_DEBUG_DEFAULT_ON
+	bool "Enable Robodebug debugging"
+	depends on SPI_ROBODEBUG
+	help
+	  Enable robodebug debugging
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
