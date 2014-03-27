@@ -45,51 +45,44 @@
 #include <asm/processor.h>
 #include <asm/byteorder.h>
 
-#define SCU_EXT0_GPIO_BASE			187
-#define SCU_EXT1_GPIO_BASE			179
-#define SCU_EXT2_GPIO_BASE			171
-#define SCU_EXT3_GPIO_BASE			163
+#define SCU_EXT_GPIO_BASE(x)	(187 - (x) * 8)
+#define SCU_EXT_GPIO(chip, x)	(SCU_EXT_GPIO_BASE(chip) + (x))
 
-#define SCU_EXT0_GPIO(x)			(SCU_EXT0_GPIO_BASE + (x))
-#define SCU_EXT1_GPIO(x)			(SCU_EXT1_GPIO_BASE + (x))
-#define SCU_EXT2_GPIO(x)			(SCU_EXT2_GPIO_BASE + (x))
-#define SCU_EXT3_GPIO(x)			(SCU_EXT3_GPIO_BASE + (x))
+#define SCU_WIRELESS_ENA_1_GPIO			SCU_EXT_GPIO(0, 0)	/* Read only external discrete status. */
+#define SCU_WIRELESS_ENA_2_GPIO			SCU_EXT_GPIO(0, 1)	/* Read only external discrete status. */
+#define SCU_WIRELESS_A_RADIO_DISABLE_GPIO	SCU_EXT_GPIO(0, 2)	/* Wireless A software controlled radio disable. */
+#define SCU_WIRELESS_A_RESET_GPIO		SCU_EXT_GPIO(0, 3)	/* Wireless A card reset. */
+#define SCU_IN_SPARE_1_GPIO			SCU_EXT_GPIO(0, 4)	/* Read only external discrete status. */
+#define SCU_IN_SPARE_2_GPIO			SCU_EXT_GPIO(0, 5)	/* Read only external discrete status. */
+#define SCU_WIRELESS_B_RADIO_DISABLE_GPIO	SCU_EXT_GPIO(0, 6)	/* Wireless B software controlled radio disable. */
+#define SCU_WIRELESS_B_RESET_GPIO		SCU_EXT_GPIO(0, 7)	/* Wireless B card reset. */
 
-#define SCU_WIRELESS_ENA_1_GPIO			SCU_EXT0_GPIO(0)	/* Read only external discrete status. */
-#define SCU_WIRELESS_ENA_2_GPIO			SCU_EXT0_GPIO(1)	/* Read only external discrete status. */
-#define SCU_WIRELESS_A_RADIO_DISABLE_GPIO	SCU_EXT0_GPIO(2)	/* Wireless A software controlled radio disable. */
-#define SCU_WIRELESS_A_RESET_GPIO		SCU_EXT0_GPIO(3)	/* Wireless A card reset. */
-#define SCU_IN_SPARE_1_GPIO			SCU_EXT0_GPIO(4)	/* Read only external discrete status. */
-#define SCU_IN_SPARE_2_GPIO			SCU_EXT0_GPIO(5)	/* Read only external discrete status. */
-#define SCU_WIRELESS_B_RADIO_DISABLE_GPIO	SCU_EXT0_GPIO(6)	/* Wireless B software controlled radio disable. */
-#define SCU_WIRELESS_B_RESET_GPIO		SCU_EXT0_GPIO(7)	/* Wireless B card reset. */
+#define SCU_RD_LED_GPIO				SCU_EXT_GPIO(1, 0)	/* Front panel LED. */
+#define SCU_WLES_LED_GPIO			SCU_EXT_GPIO(1, 1)	/* Front panel LED. */
+#define SCU_LD_FAIL_LED_GPIO			SCU_EXT_GPIO(1, 2)	/* Front panel LED. */
+#define SCU_SW_LED_GPIO				SCU_EXT_GPIO(1, 3)	/* Front panel LED shared control with the PIC. */
+#define SCU_DISCRETE_OUT_1_GPIO			SCU_EXT_GPIO(1, 4)	/* External discrete output. */
+#define SCU_DISCRETE_OUT_2_GPIO			SCU_EXT_GPIO(1, 5)	/* External discrete output. */
+#define SCU_DISCRETE_OUT_3_GPIO			SCU_EXT_GPIO(1, 6)	/* External discrete output. */
+#define SCU_DISCRETE_OUT_4_GPIO			SCU_EXT_GPIO(1, 7)	/* External discrete output. */
 
-#define SCU_RD_LED_GPIO				SCU_EXT1_GPIO(0)	/* Front panel LED. */
-#define SCU_WLES_LED_GPIO			SCU_EXT1_GPIO(1)	/* Front panel LED. */
-#define SCU_LD_FAIL_LED_GPIO			SCU_EXT1_GPIO(2)	/* Front panel LED. */
-#define SCU_SW_LED_GPIO				SCU_EXT1_GPIO(3)	/* Front panel LED shared control with the PIC. */
-#define SCU_DISCRETE_OUT_1_GPIO			SCU_EXT1_GPIO(4)	/* External discrete output. */
-#define SCU_DISCRETE_OUT_2_GPIO			SCU_EXT1_GPIO(5)	/* External discrete output. */
-#define SCU_DISCRETE_OUT_3_GPIO			SCU_EXT1_GPIO(6)	/* External discrete output. */
-#define SCU_DISCRETE_OUT_4_GPIO			SCU_EXT1_GPIO(7)	/* External discrete output. */
+#define SCU_SD_ACTIVE_1_GPIO			SCU_EXT_GPIO(2, 0)	/* Front panel LED. */
+#define SCU_SD_ERROR_1_GPIO			SCU_EXT_GPIO(2, 1)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_2_GPIO			SCU_EXT_GPIO(2, 2)	/* Front panel LED. */
+#define SCU_SD_ERROR_2_GPIO			SCU_EXT_GPIO(2, 3)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_3_GPIO			SCU_EXT_GPIO(2, 4)	/* Front panel LED. */
+#define SCU_SD_ERROR_3_GPIO			SCU_EXT_GPIO(2, 5)	/* Front panel LED. */
+#define SCU_HUB_6_RESET_GPIO			SCU_EXT_GPIO(2, 6)	/* Set to 0 to reset, 1 for normal operation.  Hub 6 controls ports 1,3, & 5 */
+#define SCU_HUB_6_CONFIG_STATUS_GPIO		SCU_EXT_GPIO(2, 7)	/* Upstream Port Speed.  (0=Full, 1=High) */
 
-#define SCU_SD_ACTIVE_1_GPIO			SCU_EXT2_GPIO(0)	/* Front panel LED. */
-#define SCU_SD_ERROR_1_GPIO			SCU_EXT2_GPIO(1)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_2_GPIO			SCU_EXT2_GPIO(2)	/* Front panel LED. */
-#define SCU_SD_ERROR_2_GPIO			SCU_EXT2_GPIO(3)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_3_GPIO			SCU_EXT2_GPIO(4)	/* Front panel LED. */
-#define SCU_SD_ERROR_3_GPIO			SCU_EXT2_GPIO(5)	/* Front panel LED. */
-#define SCU_HUB_6_RESET_GPIO			SCU_EXT2_GPIO(6)	/* Set to 0 to reset, 1 for normal operation.  Hub 6 controls ports 1,3, & 5 */
-#define SCU_HUB_6_CONFIG_STATUS_GPIO		SCU_EXT2_GPIO(7)	/* Upstream Port Speed.  (0=Full, 1=High) */
-
-#define SCU_SD_ACTIVE_4_GPIO			SCU_EXT3_GPIO(0)	/* Front panel LED. */
-#define SCU_SD_ERROR_4_GPIO			SCU_EXT3_GPIO(1)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_5_GPIO			SCU_EXT3_GPIO(2)	/* Front panel LED. */
-#define SCU_SD_ERROR_5_GPIO			SCU_EXT3_GPIO(3)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_6_GPIO			SCU_EXT3_GPIO(4)	/* Front panel LED. */
-#define SCU_SD_ERROR_6_GPIO			SCU_EXT3_GPIO(5)	/* Front panel LED. */
-#define SCU_HUB_2_RESET_GPIO			SCU_EXT3_GPIO(6)	/* Set to 0 to reset, 1 for normal operation.  Hub 2 controls ports 2,4, & 6 */
-#define SCU_HUB_2_CONFIG_STATUS_GPIO		SCU_EXT3_GPIO(7)	/* Upstream Port Speed.  (0=Full, 1=High) */
+#define SCU_SD_ACTIVE_4_GPIO			SCU_EXT_GPIO(3, 0)	/* Front panel LED. */
+#define SCU_SD_ERROR_4_GPIO			SCU_EXT_GPIO(3, 1)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_5_GPIO			SCU_EXT_GPIO(3, 2)	/* Front panel LED. */
+#define SCU_SD_ERROR_5_GPIO			SCU_EXT_GPIO(3, 3)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_6_GPIO			SCU_EXT_GPIO(3, 4)	/* Front panel LED. */
+#define SCU_SD_ERROR_6_GPIO			SCU_EXT_GPIO(3, 5)	/* Front panel LED. */
+#define SCU_HUB_2_RESET_GPIO			SCU_EXT_GPIO(3, 6)	/* Set to 0 to reset, 1 for normal operation.  Hub 2 controls ports 2,4, & 6 */
+#define SCU_HUB_2_CONFIG_STATUS_GPIO		SCU_EXT_GPIO(3, 7)	/* Upstream Port Speed.  (0=Full, 1=High) */
 
 struct __packed eeprom_data {
 	unsigned short length;			/* 0 - 1 */
@@ -711,6 +704,17 @@ static const char *pca9538_ext3_gpio_names[8] = {
 	"pca9538_ext3:hub_2_config_status",
 };
 
+static const char *pca9557_gpio_names[8] = {
+	"pca9557:port1_cd",
+	"pca9557:port2_cd",
+	"pca9557:port3_cd",
+	"pca9557:port4_cd",
+	"pca9557:port5_cd",
+	"pca9557:port6_cd",
+	"pca9557:spare1",
+	"pca9557:spare2",
+};
+
 static int pca9538_ext0_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
@@ -799,6 +803,19 @@ static int pca9538_ext3_setup(struct i2c_client *client,
 	return 0;
 }
 
+static int pca9557_setup(struct i2c_client *client,
+			 unsigned gpio_base, unsigned ngpio, void *context)
+{
+	int i;
+
+	for (i = 0; i < 6; i++) {
+		gpio_request(gpio_base + i, 0);
+		gpio_direction_input(gpio_base + i);
+		gpio_export(gpio_base + i, 0);
+	}
+	return 0;
+}
+
 static int pca9538_ext0_teardown(struct i2c_client *client,
 				 unsigned gpio_base, unsigned ngpio,
 				 void *context)
@@ -875,23 +892,41 @@ static int pca9538_ext3_teardown(struct i2c_client *client,
 	return 0;
 }
 
+static int pca9557_teardown(struct i2c_client *client,
+			    unsigned gpio_base, unsigned ngpio,
+			    void *context)
+{
+	int i;
+
+	for (i = 0; i < 6; i++) {
+		gpio_unexport(gpio_base + i);
+		gpio_free(gpio_base + i);
+	}
+
+	return 0;
+}
+
 static struct pca953x_platform_data scu_pca953x_pdata[] = {
-	[0] = {.gpio_base = SCU_EXT0_GPIO_BASE,
+	[0] = {.gpio_base = SCU_EXT_GPIO_BASE(0),
 	       .setup = pca9538_ext0_setup,
 	       .teardown = pca9538_ext0_teardown,
 	       .names = pca9538_ext0_gpio_names},
-	[1] = {.gpio_base = SCU_EXT1_GPIO_BASE,
+	[1] = {.gpio_base = SCU_EXT_GPIO_BASE(1),
 	       .setup = pca9538_ext1_setup,
 	       .teardown = pca9538_ext1_teardown,
 	       .names = pca9538_ext1_gpio_names},
-	[2] = {.gpio_base = SCU_EXT2_GPIO_BASE,
+	[2] = {.gpio_base = SCU_EXT_GPIO_BASE(2),
 	       .setup = pca9538_ext2_setup,
 	       .teardown = pca9538_ext2_teardown,
 	       .names = pca9538_ext2_gpio_names},
-	[3] = {.gpio_base = SCU_EXT3_GPIO_BASE,
+	[3] = {.gpio_base = SCU_EXT_GPIO_BASE(3),
 	       .setup = pca9538_ext3_setup,
 	       .teardown = pca9538_ext3_teardown,
 	       .names = pca9538_ext3_gpio_names},
+	[4] = {.gpio_base = SCU_EXT_GPIO_BASE(4),
+	       .setup = pca9557_setup,
+	       .teardown = pca9557_teardown,
+	       .names = pca9557_gpio_names},
 };
 
 static struct scu_platform_data scu_platform_data[] = {
@@ -913,6 +948,40 @@ static struct scu_platform_data scu_platform_data[] = {
 		.version = scu3,
 		.eeprom_len = SCU_EEPROM_LEN_GEN3,
 	},
+};
+
+static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
+	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
+	    LIS3_CLICK_SINGLE_Z,
+	/* Limits are 0.5g * value */
+	.click_thresh_x = 8,
+	.click_thresh_y = 8,
+	.click_thresh_z = 10,
+	/* Click must be longer than time limit */
+	.click_time_limit = 9,
+	/* Kind of debounce filter */
+	.click_latency = 50,
+
+	/* Limits for all axis. millig-value / 18 to get HW values */
+	.wakeup_flags = LIS3_WAKEUP_X_HI | LIS3_WAKEUP_Y_HI,
+	.wakeup_thresh = 800 / 18,
+	.wakeup_flags2 = LIS3_WAKEUP_Z_HI,
+	.wakeup_thresh2 = 900 / 18,
+
+	.hipass_ctrl = LIS3_HIPASS1_DISABLE | LIS3_HIPASS2_DISABLE,
+
+	.axis_x = LIS3_DEV_X,
+	.axis_y = LIS3_INV_DEV_Y,
+	.axis_z = LIS3_INV_DEV_Z,
+	.st_min_limits = {-32, 3, 3},
+	.st_max_limits = {-3, 32, 32},
+};
+
+static struct i2c_board_info scu_i2c_info_scu3[] = {
+	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
+		.platform_data = &scu_lis3lv02d_data},
+	{ I2C_BOARD_INFO("pca9557", 0x1b),
+		.platform_data = &scu_pca953x_pdata[4],},
 };
 
 /*
@@ -972,7 +1041,16 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 		goto error_noclean;
 	}
 
-	/* Update sysfs attributes based on retrieved platform data */
+	/* Instantiate additional i2c devices for scu3 */
+	if (data->pdata->version == scu3) {
+		for (i = 0; i < ARRAY_SIZE(scu_i2c_info_scu3); i++) {
+			/* ignore errors, ie fail gracefully */
+			data->client[i + 8] = i2c_new_device(data->adapter,
+							     &scu_i2c_info_scu3[i]);
+		}
+	}
+
+	/* Create sysfs attributes based on retrieved platform data */
 	data->eeprom_valid = true;
 	goto done;
 
@@ -991,36 +1069,7 @@ static struct at24_platform_data at24c08 = {
 	.setup = populate_unit_info,
 };
 
-static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
-	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
-	    LIS3_CLICK_SINGLE_Z,
-	/* Limits are 0.5g * value */
-	.click_thresh_x = 8,
-	.click_thresh_y = 8,
-	.click_thresh_z = 10,
-	/* Click must be longer than time limit */
-	.click_time_limit = 9,
-	/* Kind of debounce filter */
-	.click_latency = 50,
-
-	/* Limits for all axis. millig-value / 18 to get HW values */
-	.wakeup_flags = LIS3_WAKEUP_X_HI | LIS3_WAKEUP_Y_HI,
-	.wakeup_thresh = 800 / 18,
-	.wakeup_flags2 = LIS3_WAKEUP_Z_HI,
-	.wakeup_thresh2 = 900 / 18,
-
-	.hipass_ctrl = LIS3_HIPASS1_DISABLE | LIS3_HIPASS2_DISABLE,
-
-	.axis_x = LIS3_DEV_X,
-	.axis_y = LIS3_INV_DEV_Y,
-	.axis_z = LIS3_INV_DEV_Z,
-	.st_min_limits = {-32, 3, 3},
-	.st_max_limits = {-3, 32, 32},
-};
-
 static struct i2c_board_info scu_i2c_info[] = {
-	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
-		.platform_data = &scu_lis3lv02d_data},
 	{ I2C_BOARD_INFO("scu_pic", 0x20)},
 	{ I2C_BOARD_INFO("sc18is602", 0x28)},
 	{ I2C_BOARD_INFO("at24", 0x54),
