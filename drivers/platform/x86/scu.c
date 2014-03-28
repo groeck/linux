@@ -48,41 +48,24 @@
 #define SCU_EXT_GPIO_BASE(x)	(187 - (x) * 8)
 #define SCU_EXT_GPIO(chip, x)	(SCU_EXT_GPIO_BASE(chip) + (x))
 
-#define SCU_WIRELESS_ENA_1_GPIO			SCU_EXT_GPIO(0, 0)	/* Read only external discrete status. */
-#define SCU_WIRELESS_ENA_2_GPIO			SCU_EXT_GPIO(0, 1)	/* Read only external discrete status. */
-#define SCU_WIRELESS_A_RADIO_DISABLE_GPIO	SCU_EXT_GPIO(0, 2)	/* Wireless A software controlled radio disable. */
-#define SCU_WIRELESS_A_RESET_GPIO		SCU_EXT_GPIO(0, 3)	/* Wireless A card reset. */
-#define SCU_IN_SPARE_1_GPIO			SCU_EXT_GPIO(0, 4)	/* Read only external discrete status. */
-#define SCU_IN_SPARE_2_GPIO			SCU_EXT_GPIO(0, 5)	/* Read only external discrete status. */
-#define SCU_WIRELESS_B_RADIO_DISABLE_GPIO	SCU_EXT_GPIO(0, 6)	/* Wireless B software controlled radio disable. */
-#define SCU_WIRELESS_B_RESET_GPIO		SCU_EXT_GPIO(0, 7)	/* Wireless B card reset. */
+#define SCU_RD_LED_GPIO		SCU_EXT_GPIO(1, 0)	/* Front panel LED. */
+#define SCU_WLES_LED_GPIO	SCU_EXT_GPIO(1, 1)	/* Front panel LED. */
+#define SCU_LD_FAIL_LED_GPIO	SCU_EXT_GPIO(1, 2)	/* Front panel LED. */
+#define SCU_SW_LED_GPIO		SCU_EXT_GPIO(1, 3)	/* Front panel LED shared control with the PIC. */
 
-#define SCU_RD_LED_GPIO				SCU_EXT_GPIO(1, 0)	/* Front panel LED. */
-#define SCU_WLES_LED_GPIO			SCU_EXT_GPIO(1, 1)	/* Front panel LED. */
-#define SCU_LD_FAIL_LED_GPIO			SCU_EXT_GPIO(1, 2)	/* Front panel LED. */
-#define SCU_SW_LED_GPIO				SCU_EXT_GPIO(1, 3)	/* Front panel LED shared control with the PIC. */
-#define SCU_DISCRETE_OUT_1_GPIO			SCU_EXT_GPIO(1, 4)	/* External discrete output. */
-#define SCU_DISCRETE_OUT_2_GPIO			SCU_EXT_GPIO(1, 5)	/* External discrete output. */
-#define SCU_DISCRETE_OUT_3_GPIO			SCU_EXT_GPIO(1, 6)	/* External discrete output. */
-#define SCU_DISCRETE_OUT_4_GPIO			SCU_EXT_GPIO(1, 7)	/* External discrete output. */
+#define SCU_SD_ACTIVE_1_GPIO	SCU_EXT_GPIO(2, 0)	/* Front panel LED. */
+#define SCU_SD_ERROR_1_GPIO	SCU_EXT_GPIO(2, 1)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_2_GPIO	SCU_EXT_GPIO(2, 2)	/* Front panel LED. */
+#define SCU_SD_ERROR_2_GPIO	SCU_EXT_GPIO(2, 3)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_3_GPIO	SCU_EXT_GPIO(2, 4)	/* Front panel LED. */
+#define SCU_SD_ERROR_3_GPIO	SCU_EXT_GPIO(2, 5)	/* Front panel LED. */
 
-#define SCU_SD_ACTIVE_1_GPIO			SCU_EXT_GPIO(2, 0)	/* Front panel LED. */
-#define SCU_SD_ERROR_1_GPIO			SCU_EXT_GPIO(2, 1)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_2_GPIO			SCU_EXT_GPIO(2, 2)	/* Front panel LED. */
-#define SCU_SD_ERROR_2_GPIO			SCU_EXT_GPIO(2, 3)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_3_GPIO			SCU_EXT_GPIO(2, 4)	/* Front panel LED. */
-#define SCU_SD_ERROR_3_GPIO			SCU_EXT_GPIO(2, 5)	/* Front panel LED. */
-#define SCU_HUB_6_RESET_GPIO			SCU_EXT_GPIO(2, 6)	/* Set to 0 to reset, 1 for normal operation.  Hub 6 controls ports 1,3, & 5 */
-#define SCU_HUB_6_CONFIG_STATUS_GPIO		SCU_EXT_GPIO(2, 7)	/* Upstream Port Speed.  (0=Full, 1=High) */
-
-#define SCU_SD_ACTIVE_4_GPIO			SCU_EXT_GPIO(3, 0)	/* Front panel LED. */
-#define SCU_SD_ERROR_4_GPIO			SCU_EXT_GPIO(3, 1)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_5_GPIO			SCU_EXT_GPIO(3, 2)	/* Front panel LED. */
-#define SCU_SD_ERROR_5_GPIO			SCU_EXT_GPIO(3, 3)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_6_GPIO			SCU_EXT_GPIO(3, 4)	/* Front panel LED. */
-#define SCU_SD_ERROR_6_GPIO			SCU_EXT_GPIO(3, 5)	/* Front panel LED. */
-#define SCU_HUB_2_RESET_GPIO			SCU_EXT_GPIO(3, 6)	/* Set to 0 to reset, 1 for normal operation.  Hub 2 controls ports 2,4, & 6 */
-#define SCU_HUB_2_CONFIG_STATUS_GPIO		SCU_EXT_GPIO(3, 7)	/* Upstream Port Speed.  (0=Full, 1=High) */
+#define SCU_SD_ACTIVE_4_GPIO	SCU_EXT_GPIO(3, 0)	/* Front panel LED. */
+#define SCU_SD_ERROR_4_GPIO	SCU_EXT_GPIO(3, 1)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_5_GPIO	SCU_EXT_GPIO(3, 2)	/* Front panel LED. */
+#define SCU_SD_ERROR_5_GPIO	SCU_EXT_GPIO(3, 3)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_6_GPIO	SCU_EXT_GPIO(3, 4)	/* Front panel LED. */
+#define SCU_SD_ERROR_6_GPIO	SCU_EXT_GPIO(3, 5)	/* Front panel LED. */
 
 struct __packed eeprom_data {
 	unsigned short length;			/* 0 - 1 */
@@ -715,135 +698,77 @@ static const char *pca9557_gpio_names[8] = {
 	"pca9557:spare2",
 };
 
+static int pca9538_common_setup(unsigned gpio_base, unsigned ngpio, u32 mask,
+				u32 is_input, u32 is_active)
+{
+	int i;
+
+	for (i = 0; i < ngpio; i++) {
+		if (!(mask & (1 << i)))
+			continue;
+		gpio_request(gpio_base + i, 0);
+		if (is_input & (1 << mask))
+			gpio_direction_input(gpio_base+i);
+		else
+			gpio_direction_output(gpio_base + i,
+					      !!(is_active & (1 << i)));
+		gpio_export(gpio_base + i, 0);
+	}
+	return 0;
+}
+
 static int pca9538_ext0_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	gpio_request(SCU_WIRELESS_ENA_1_GPIO, 0);
-	gpio_direction_input(SCU_WIRELESS_ENA_1_GPIO);
-	gpio_export(SCU_WIRELESS_ENA_1_GPIO, 0);
-
-	gpio_request(SCU_WIRELESS_ENA_2_GPIO, 0);
-	gpio_direction_input(SCU_WIRELESS_ENA_2_GPIO);
-	gpio_export(SCU_WIRELESS_ENA_2_GPIO, 0);
-
-	gpio_request(SCU_WIRELESS_A_RADIO_DISABLE_GPIO, 0);
-	gpio_direction_output(SCU_WIRELESS_A_RADIO_DISABLE_GPIO, 1);
-	gpio_export(SCU_WIRELESS_A_RADIO_DISABLE_GPIO, 0);
-
-	gpio_request(SCU_WIRELESS_A_RESET_GPIO, 0);
-	gpio_direction_output(SCU_WIRELESS_A_RESET_GPIO, 1);
-	gpio_export(SCU_WIRELESS_A_RESET_GPIO, 0);
-
-	gpio_request(SCU_IN_SPARE_1_GPIO, 0);
-	gpio_direction_input(SCU_IN_SPARE_1_GPIO);
-	gpio_export(SCU_IN_SPARE_1_GPIO, 0);
-
-	gpio_request(SCU_IN_SPARE_2_GPIO, 0);
-	gpio_direction_input(SCU_IN_SPARE_2_GPIO);
-	gpio_export(SCU_IN_SPARE_2_GPIO, 0);
-
-	gpio_request(SCU_WIRELESS_B_RADIO_DISABLE_GPIO, 0);
-	gpio_direction_output(SCU_WIRELESS_B_RADIO_DISABLE_GPIO, 1);
-	gpio_export(SCU_WIRELESS_B_RADIO_DISABLE_GPIO, 0);
-
-	gpio_request(SCU_WIRELESS_B_RESET_GPIO, 0);
-	gpio_direction_output(SCU_WIRELESS_B_RESET_GPIO, 1);
-	gpio_export(SCU_WIRELESS_B_RESET_GPIO, 0);
-
+	pca9538_common_setup(gpio_base, ngpio, 0xff, 0x33, 0xcc);
 	return 0;
 }
 
 static int pca9538_ext1_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	gpio_request(SCU_DISCRETE_OUT_1_GPIO, 0);
-	gpio_direction_output(SCU_DISCRETE_OUT_1_GPIO, 0);
-	gpio_export(SCU_DISCRETE_OUT_1_GPIO, 0);
-
-	gpio_request(SCU_DISCRETE_OUT_2_GPIO, 0);
-	gpio_direction_output(SCU_DISCRETE_OUT_2_GPIO, 0);
-	gpio_export(SCU_DISCRETE_OUT_2_GPIO, 0);
-
-	gpio_request(SCU_DISCRETE_OUT_3_GPIO, 0);
-	gpio_direction_output(SCU_DISCRETE_OUT_3_GPIO, 0);
-	gpio_export(SCU_DISCRETE_OUT_3_GPIO, 0);
-
-	gpio_request(SCU_DISCRETE_OUT_4_GPIO, 0);
-	gpio_direction_output(SCU_DISCRETE_OUT_4_GPIO, 0);
-	gpio_export(SCU_DISCRETE_OUT_4_GPIO, 0);
-
+	pca9538_common_setup(gpio_base, ngpio, 0xf0, 0x00, 0x00);
 	return 0;
 }
 
 static int pca9538_ext2_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	gpio_request(SCU_HUB_6_RESET_GPIO, 0);
-	gpio_direction_output(SCU_HUB_6_RESET_GPIO, 1);
-	gpio_export(SCU_HUB_6_RESET_GPIO, 0);
-
-	gpio_request(SCU_HUB_6_CONFIG_STATUS_GPIO, 0);
-	gpio_direction_input(SCU_HUB_6_CONFIG_STATUS_GPIO);
-	gpio_export(SCU_HUB_6_CONFIG_STATUS_GPIO, 0);
-
+	pca9538_common_setup(gpio_base, ngpio, 0xc0, 0x80, 0x40);
 	return 0;
 }
 
 static int pca9538_ext3_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	gpio_request(SCU_HUB_2_RESET_GPIO, 0);
-	gpio_direction_output(SCU_HUB_2_RESET_GPIO, 1);
-	gpio_export(SCU_HUB_2_RESET_GPIO, 0);
-
-	gpio_request(SCU_HUB_2_CONFIG_STATUS_GPIO, 0);
-	gpio_direction_input(SCU_HUB_2_CONFIG_STATUS_GPIO);
-	gpio_export(SCU_HUB_2_CONFIG_STATUS_GPIO, 0);
-
+	pca9538_common_setup(gpio_base, ngpio, 0xc0, 0x80, 0x40);
 	return 0;
 }
 
 static int pca9557_setup(struct i2c_client *client,
 			 unsigned gpio_base, unsigned ngpio, void *context)
 {
+	pca9538_common_setup(gpio_base, ngpio, 0x3f, 0x3f, 0x00);
+	return 0;
+}
+
+static void pca95xx_common_teardown(unsigned gpio_base, int ngpio, u32 mask)
+{
 	int i;
 
-	for (i = 0; i < 6; i++) {
-		gpio_request(gpio_base + i, 0);
-		gpio_direction_input(gpio_base + i);
-		gpio_export(gpio_base + i, 0);
+	for (i = 0; i < ngpio; i++) {
+		if (mask & (1 << i)) {
+			gpio_unexport(gpio_base + i);
+			gpio_free(gpio_base + i);
+		}
 	}
-	return 0;
 }
 
 static int pca9538_ext0_teardown(struct i2c_client *client,
 				 unsigned gpio_base, unsigned ngpio,
 				 void *context)
 {
-	gpio_unexport(SCU_WIRELESS_ENA_1_GPIO);
-	gpio_free(SCU_WIRELESS_ENA_1_GPIO);
-
-	gpio_unexport(SCU_WIRELESS_ENA_2_GPIO);
-	gpio_free(SCU_WIRELESS_ENA_2_GPIO);
-
-	gpio_unexport(SCU_WIRELESS_A_RADIO_DISABLE_GPIO);
-	gpio_free(SCU_WIRELESS_A_RADIO_DISABLE_GPIO);
-
-	gpio_unexport(SCU_WIRELESS_A_RESET_GPIO);
-	gpio_free(SCU_WIRELESS_A_RESET_GPIO);
-
-	gpio_unexport(SCU_IN_SPARE_1_GPIO);
-	gpio_free(SCU_IN_SPARE_1_GPIO);
-
-	gpio_unexport(SCU_IN_SPARE_2_GPIO);
-	gpio_free(SCU_IN_SPARE_2_GPIO);
-
-	gpio_unexport(SCU_WIRELESS_B_RADIO_DISABLE_GPIO);
-	gpio_free(SCU_WIRELESS_B_RADIO_DISABLE_GPIO);
-
-	gpio_unexport(SCU_WIRELESS_B_RESET_GPIO);
-	gpio_free(SCU_WIRELESS_B_RESET_GPIO);
-
+	pca95xx_common_teardown(gpio_base, ngpio, 0xff);
 	return 0;
 }
 
@@ -851,18 +776,7 @@ static int pca9538_ext1_teardown(struct i2c_client *client,
 				 unsigned gpio_base, unsigned ngpio,
 				 void *context)
 {
-	gpio_unexport(SCU_DISCRETE_OUT_1_GPIO);
-	gpio_free(SCU_DISCRETE_OUT_1_GPIO);
-
-	gpio_unexport(SCU_DISCRETE_OUT_2_GPIO);
-	gpio_free(SCU_DISCRETE_OUT_2_GPIO);
-
-	gpio_unexport(SCU_DISCRETE_OUT_3_GPIO);
-	gpio_free(SCU_DISCRETE_OUT_3_GPIO);
-
-	gpio_unexport(SCU_DISCRETE_OUT_4_GPIO);
-	gpio_free(SCU_DISCRETE_OUT_4_GPIO);
-
+	pca95xx_common_teardown(gpio_base, ngpio, 0xf0);
 	return 0;
 }
 
@@ -870,12 +784,7 @@ static int pca9538_ext2_teardown(struct i2c_client *client,
 				 unsigned gpio_base, unsigned ngpio,
 				 void *context)
 {
-	gpio_unexport(SCU_HUB_6_RESET_GPIO);
-	gpio_free(SCU_HUB_6_RESET_GPIO);
-
-	gpio_unexport(SCU_HUB_6_CONFIG_STATUS_GPIO);
-	gpio_free(SCU_HUB_6_CONFIG_STATUS_GPIO);
-
+	pca95xx_common_teardown(gpio_base, ngpio, 0xc0);
 	return 0;
 }
 
@@ -883,12 +792,7 @@ static int pca9538_ext3_teardown(struct i2c_client *client,
 				 unsigned gpio_base, unsigned ngpio,
 				 void *context)
 {
-	gpio_unexport(SCU_HUB_2_RESET_GPIO);
-	gpio_free(SCU_HUB_2_RESET_GPIO);
-
-	gpio_unexport(SCU_HUB_2_CONFIG_STATUS_GPIO);
-	gpio_free(SCU_HUB_2_CONFIG_STATUS_GPIO);
-
+	pca95xx_common_teardown(gpio_base, ngpio, 0xc0);
 	return 0;
 }
 
@@ -896,13 +800,7 @@ static int pca9557_teardown(struct i2c_client *client,
 			    unsigned gpio_base, unsigned ngpio,
 			    void *context)
 {
-	int i;
-
-	for (i = 0; i < 6; i++) {
-		gpio_unexport(gpio_base + i);
-		gpio_free(gpio_base + i);
-	}
-
+	pca95xx_common_teardown(gpio_base, ngpio, 0x3f);
 	return 0;
 }
 
