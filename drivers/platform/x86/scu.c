@@ -31,7 +31,8 @@
 #include <linux/dmi.h>
 #include <linux/i2c.h>
 #include <linux/i2c-gpio.h>
-#ifdef OLD_KERNEL
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
 #include <linux/i2c/at24.h>
 #else
 #include <linux/platform_data/at24.h>
