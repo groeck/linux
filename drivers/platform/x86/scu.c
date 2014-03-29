@@ -49,24 +49,25 @@
 #define SCU_EXT_GPIO_BASE(x)	(187 - (x) * 8)
 #define SCU_EXT_GPIO(chip, x)	(SCU_EXT_GPIO_BASE(chip) + (x))
 
-#define SCU_RD_LED_GPIO		SCU_EXT_GPIO(1, 0)	/* Front panel LED. */
-#define SCU_WLES_LED_GPIO	SCU_EXT_GPIO(1, 1)	/* Front panel LED. */
-#define SCU_LD_FAIL_LED_GPIO	SCU_EXT_GPIO(1, 2)	/* Front panel LED. */
-#define SCU_SW_LED_GPIO		SCU_EXT_GPIO(1, 3)	/* Front panel LED shared control with the PIC. */
+/* Front panel LEDs */
+#define SCU_RD_LED_GPIO		SCU_EXT_GPIO(1, 0)
+#define SCU_WLES_LED_GPIO	SCU_EXT_GPIO(1, 1)
+#define SCU_LD_FAIL_LED_GPIO	SCU_EXT_GPIO(1, 2)
+#define SCU_SW_LED_GPIO		SCU_EXT_GPIO(1, 3)	/* shared control with PIC */
 
-#define SCU_SD_ACTIVE_1_GPIO	SCU_EXT_GPIO(2, 0)	/* Front panel LED. */
-#define SCU_SD_ERROR_1_GPIO	SCU_EXT_GPIO(2, 1)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_2_GPIO	SCU_EXT_GPIO(2, 2)	/* Front panel LED. */
-#define SCU_SD_ERROR_2_GPIO	SCU_EXT_GPIO(2, 3)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_3_GPIO	SCU_EXT_GPIO(2, 4)	/* Front panel LED. */
-#define SCU_SD_ERROR_3_GPIO	SCU_EXT_GPIO(2, 5)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_1_GPIO	SCU_EXT_GPIO(2, 0)
+#define SCU_SD_ERROR_1_GPIO	SCU_EXT_GPIO(2, 1)
+#define SCU_SD_ACTIVE_2_GPIO	SCU_EXT_GPIO(2, 2)
+#define SCU_SD_ERROR_2_GPIO	SCU_EXT_GPIO(2, 3)
+#define SCU_SD_ACTIVE_3_GPIO	SCU_EXT_GPIO(2, 4)
+#define SCU_SD_ERROR_3_GPIO	SCU_EXT_GPIO(2, 5)
 
-#define SCU_SD_ACTIVE_4_GPIO	SCU_EXT_GPIO(3, 0)	/* Front panel LED. */
-#define SCU_SD_ERROR_4_GPIO	SCU_EXT_GPIO(3, 1)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_5_GPIO	SCU_EXT_GPIO(3, 2)	/* Front panel LED. */
-#define SCU_SD_ERROR_5_GPIO	SCU_EXT_GPIO(3, 3)	/* Front panel LED. */
-#define SCU_SD_ACTIVE_6_GPIO	SCU_EXT_GPIO(3, 4)	/* Front panel LED. */
-#define SCU_SD_ERROR_6_GPIO	SCU_EXT_GPIO(3, 5)	/* Front panel LED. */
+#define SCU_SD_ACTIVE_4_GPIO	SCU_EXT_GPIO(3, 0)
+#define SCU_SD_ERROR_4_GPIO	SCU_EXT_GPIO(3, 1)
+#define SCU_SD_ACTIVE_5_GPIO	SCU_EXT_GPIO(3, 2)
+#define SCU_SD_ERROR_5_GPIO	SCU_EXT_GPIO(3, 3)
+#define SCU_SD_ACTIVE_6_GPIO	SCU_EXT_GPIO(3, 4)
+#define SCU_SD_ERROR_6_GPIO	SCU_EXT_GPIO(3, 5)
 
 struct __packed eeprom_data {
 	unsigned short length;			/* 0 - 1 */
@@ -943,9 +944,10 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	/* Instantiate additional i2c devices for scu3 */
 	if (data->pdata->version == scu3) {
 		for (i = 0; i < ARRAY_SIZE(scu_i2c_info_scu3); i++) {
-			/* ignore errors, ie fail gracefully */
-			data->client[i + 8] = i2c_new_device(data->adapter,
-							     &scu_i2c_info_scu3[i]);
+			/* ignore errors */
+			data->client[i + 8] =
+				i2c_new_device(data->adapter,
+					       &scu_i2c_info_scu3[i]);
 		}
 	}
 
