@@ -1226,7 +1226,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 
 	pca_leds_unregister(data);
 
-	for (i = 0; i < ARRAY_SIZE(data->spidev) && data->spidev[i]; i++)
+	for (i = 0; i < ARRAY_SIZE(data->spidev); i++)
 		spi_unregister_device(data->spidev[i]);
 	spi_master_put(data->master);
 
