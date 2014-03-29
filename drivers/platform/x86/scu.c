@@ -103,6 +103,10 @@ struct scu_platform_data {
 	const char *part_number;
 	enum scu_version version;
 	int eeprom_len;
+	struct i2c_board_info *i2c_board_info;
+	int num_i2c_board_info;
+	struct spi_board_info *spi_board_info;
+	int num_spi_board_info;
 };
 
 struct scu_data {
@@ -829,25 +833,8 @@ static struct pca953x_platform_data scu_pca953x_pdata[] = {
 	       .names = pca9557_gpio_names},
 };
 
-static struct scu_platform_data scu_platform_data[] = {
-	[scu1] = {
-		.board_type = "SCU1 x86",
-		.part_number = SCU_PARTNUM_GEN1,
-		.version = scu1,
-		.eeprom_len = SCU_EEPROM_LEN_GEN1,
-	},
-	[scu2] = {
-		.board_type = "SCU2 x86",
-		.part_number = SCU_PARTNUM_GEN2,
-		.version = scu2,
-		.eeprom_len = SCU_EEPROM_LEN_GEN2,
-	},
-	[scu3] = {
-		.board_type = "SCU3 x86",
-		.part_number = SCU_PARTNUM_GEN3,
-		.version = scu3,
-		.eeprom_len = SCU_EEPROM_LEN_GEN3,
-	},
+static struct i2c_board_info scu_i2c_info_scu2[] = {
+	{ I2C_BOARD_INFO("sc18is602", 0x28)},
 };
 
 static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
@@ -884,6 +871,97 @@ static struct i2c_board_info scu_i2c_info_scu3[] = {
 		.platform_data = &scu_pca953x_pdata[4],},
 };
 
+static struct spi_board_info scu_spi_info[] = {
+	{
+#ifdef TESTING
+	 .modalias = "lm70",
+	 .bus_num = 0,
+	 .chip_select = 0,
+	 .max_speed_hz = 1000000,
+	 .mode = SPI_MODE_0,
+#else
+	 .modalias = "robodebug",
+	 .bus_num = 0,
+	 .chip_select = 0,
+	 .max_speed_hz = 2000000,
+	 .mode = SPI_MODE_3,
+#endif
+	},
+};
+
+static struct scu_platform_data scu_platform_data[] = {
+	[scu1] = {
+		.board_type = "SCU1 x86",
+		.part_number = SCU_PARTNUM_GEN1,
+		.version = scu1,
+		.eeprom_len = SCU_EEPROM_LEN_GEN1,
+		.i2c_board_info = scu_i2c_info_scu2,
+		.num_i2c_board_info = ARRAY_SIZE(scu_i2c_info_scu2),
+		.spi_board_info = scu_spi_info,
+		.num_spi_board_info = ARRAY_SIZE(scu_spi_info),
+	},
+	[scu2] = {
+		.board_type = "SCU2 x86",
+		.part_number = SCU_PARTNUM_GEN2,
+		.version = scu2,
+		.eeprom_len = SCU_EEPROM_LEN_GEN2,
+		.i2c_board_info = scu_i2c_info_scu2,
+		.num_i2c_board_info = ARRAY_SIZE(scu_i2c_info_scu2),
+		.spi_board_info = scu_spi_info,
+		.num_spi_board_info = ARRAY_SIZE(scu_spi_info),
+	},
+	[scu3] = {
+		.board_type = "SCU3 x86",
+		.part_number = SCU_PARTNUM_GEN3,
+		.version = scu3,
+		.eeprom_len = SCU_EEPROM_LEN_GEN3,
+		.i2c_board_info = scu_i2c_info_scu3,
+		.num_i2c_board_info = ARRAY_SIZE(scu_i2c_info_scu3),
+	},
+};
+
+static int scu_instantiate_i2c(struct scu_data *data, int base,
+			       struct i2c_board_info *info, int count)
+{
+	int i;
+
+	for (i = 0; i < count; i++) {
+		data->client[base + i] = i2c_new_device(data->adapter, info);
+		if (!data->client[base + i]) {
+			/*
+			 * Unfortunately this call does not tell us
+			 * why it failed. Pick the most likely reason.
+			 */
+			return -EBUSY;
+		}
+		info++;
+	}
+	return 0;
+}
+
+static int scu_instantiate_spi(struct scu_data *data,
+			       struct spi_board_info *info, int count)
+{
+	struct spi_master *master;
+	int i;
+
+	/* SPI bus number matches i2c bus number (set by sc18is602 driver) */
+	master = spi_busnum_to_master(data->adapter->nr);
+	if (!master) {
+		dev_err(data->dev, "Failed to find SPI adapter\n");
+		return -ENODEV;
+	}
+	data->master = master;
+
+	for (i = 0; i < count; i++) {
+		info->bus_num = master->bus_num;
+		/* ignore errors */
+		data->spidev[i] = spi_new_device(master, info);
+		info++;
+	}
+	return 0;
+}
+
 /*
  * This is the callback function when a a specifc at24 eeprom is found.
  * Its reads out the eeprom contents via the read function passed back in via
@@ -893,8 +971,8 @@ static struct i2c_board_info scu_i2c_info_scu3[] = {
 static void populate_unit_info(struct memory_accessor *mem_accessor,
 			       void *context)
 {
+	const struct scu_platform_data *pdata;
 	struct scu_data *data = context;
-	struct scu_platform_data *pdata;
 	unsigned char *ptr;
 	int i, len;
 
@@ -929,6 +1007,20 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 			break;
 		}
 	}
+	pdata = data->pdata;
+
+	/*
+	 * We know as much as we will ever find out about the platform.
+	 * Instantiate additional I2C devices as well as SPI devices now,
+	 * prior to validating the EEPROM checksum.
+	 */
+	if (pdata->i2c_board_info)
+		scu_instantiate_i2c(data, 7, pdata->i2c_board_info,
+				    pdata->num_i2c_board_info);
+
+	if (pdata->spi_board_info)
+		scu_instantiate_spi(data, pdata->spi_board_info,
+				    pdata->num_spi_board_info);
 
 	len = data->pdata->eeprom_len;
 
@@ -939,16 +1031,6 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 			scu_get_checksum(ptr, len), len);
 		/* TBD: Do we want to clear the eeprom in this case ? */
 		goto error_noclean;
-	}
-
-	/* Instantiate additional i2c devices for scu3 */
-	if (data->pdata->version == scu3) {
-		for (i = 0; i < ARRAY_SIZE(scu_i2c_info_scu3); i++) {
-			/* ignore errors */
-			data->client[i + 8] =
-				i2c_new_device(data->adapter,
-					       &scu_i2c_info_scu3[i]);
-		}
 	}
 
 	/* Create sysfs attributes based on retrieved platform data */
@@ -970,9 +1052,8 @@ static struct at24_platform_data at24c08 = {
 	.setup = populate_unit_info,
 };
 
-static struct i2c_board_info scu_i2c_info[] = {
+static struct i2c_board_info scu_i2c_info_common[] = {
 	{ I2C_BOARD_INFO("scu_pic", 0x20)},
-	{ I2C_BOARD_INFO("sc18is602", 0x28)},
 	{ I2C_BOARD_INFO("at24", 0x54),
 		.platform_data = &at24c08},
 	{ I2C_BOARD_INFO("ds1682", 0x6b)},
@@ -984,24 +1065,6 @@ static struct i2c_board_info scu_i2c_info[] = {
 		.platform_data = &scu_pca953x_pdata[2],},
 	{ I2C_BOARD_INFO("pca9538", 0x73),
 		.platform_data = &scu_pca953x_pdata[3],},
-};
-
-static struct spi_board_info scu_spi_info[] = {
-	{
-#ifdef TESTING
-	 .modalias = "lm70",
-	 .bus_num = 0,
-	 .chip_select = 0,
-	 .max_speed_hz = 1000000,
-	 .mode = SPI_MODE_0,
-#else
-	 .modalias = "robodebug",
-	 .bus_num = 0,
-	 .chip_select = 0,
-	 .max_speed_hz = 2000000,
-	 .mode = SPI_MODE_3,
-#endif
-	 },
 };
 
 static int scu_i2c_adap_name_match(struct device *dev, void *data)
@@ -1088,7 +1151,6 @@ static int scu_probe(struct platform_device *pdev)
 	struct proc_dir_entry *rave_board_type;
 	struct device *dev = &pdev->dev;
 	struct i2c_adapter *adapter;
-	struct spi_master *master;
 	struct scu_data *data;
 	int i, ret;
 
@@ -1130,35 +1192,10 @@ static int scu_probe(struct platform_device *pdev)
 
 	at24c08.context = data;
 
-	for (i = 0; i < ARRAY_SIZE(scu_i2c_info); i++) {
-		data->client[i] = i2c_new_device(adapter, &scu_i2c_info[i]);
-		if (!data->client[i]) {
-			/*
-			 * Unfortunately this call does not tell us
-			 * why it failed. Pick the most likely reason.
-			 */
-			ret = -EBUSY;
-			goto error_i2c_client;
-		}
-	}
-
-	/* SPI bus number matches i2c bus number (set by sc18is602 driver) */
-	master = spi_busnum_to_master(adapter->nr);
-	if (!master) {
-		dev_err(dev, "Failed to find SPI adapter\n");
-		ret = -ENODEV;
+	ret = scu_instantiate_i2c(data, 0, scu_i2c_info_common,
+				  ARRAY_SIZE(scu_i2c_info_common));
+	if (ret)
 		goto error_i2c_client;
-	}
-	data->master = master;
-
-	for (i = 0; i < ARRAY_SIZE(scu_spi_info); i++) {
-		scu_spi_info[i].bus_num = master->bus_num;
-		data->spidev[i] = spi_new_device(master, &scu_spi_info[i]);
-		if (!data->spidev[i]) {
-			ret = -ENOMEM;
-			goto error_spidev;
-		}
-	}
 
 	pca_leds_register(dev, data);
 	ret = sysfs_create_group(&dev->kobj, &scu_base_group);
@@ -1169,10 +1206,6 @@ static int scu_probe(struct platform_device *pdev)
 
 error_group:
 	pca_leds_unregister(data);
-error_spidev:
-	for (i = 0; i < ARRAY_SIZE(data->spidev) && data->spidev[i]; i++)
-		spi_unregister_device(data->spidev[i]);
-	spi_master_put(data->master);
 error_i2c_client:
 	for (i = 0; i < ARRAY_SIZE(data->client) && data->client[i]; i++)
 		i2c_unregister_device(data->client[i]);
