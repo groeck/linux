@@ -46,7 +46,7 @@
 #include <asm/processor.h>
 #include <asm/byteorder.h>
 
-#define SCU_EXT_GPIO_BASE(x)	(187 - (x) * 8)
+#define SCU_EXT_GPIO_BASE(x)	(0 + (x) * 8)
 #define SCU_EXT_GPIO(chip, x)	(SCU_EXT_GPIO_BASE(chip) + (x))
 
 /* Front panel LEDs */
