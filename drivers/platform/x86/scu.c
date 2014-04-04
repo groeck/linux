@@ -724,7 +724,7 @@ static int pca9538_common_setup(unsigned gpio_base, unsigned ngpio, u32 mask,
 		if (!(mask & (1 << i)))
 			continue;
 		gpio_request(gpio_base + i, 0);
-		if (is_input & (1 << mask))
+		if (is_input & (1 << i))
 			gpio_direction_input(gpio_base+i);
 		else
 			gpio_direction_output(gpio_base + i,
