@@ -207,13 +207,24 @@ static ssize_t scu_object_show(char *buf, char *data, int len)
 static ssize_t scu_object_store(struct scu_data *data, int offset,
 				const char *in, char *out, ssize_t len)
 {
+	char buffer[12] = { 0 };
+	char *cp;
 	int ret;
 
 	if (!data->have_write_magic)
 		return -EACCES;
 
+	strlcpy(buffer, in, sizeof(buffer));
+	/* do not copy newline from input string */
+	cp = strchr(buffer, '\n');
+	if (cp)
+		*cp = '\0';
+
+	if (len > sizeof(buffer))
+		len = sizeof(buffer);
+
 	mutex_lock(&data->write_lock);
-	strncpy(out, in, len);
+	strncpy(out, buffer, len);
 
 	/* Write entire eeprom if it was marked invalid */
 	if (!data->eeprom_valid) {
