@@ -187,14 +187,14 @@ static ssize_t attribute_magic_store(struct device *dev,
 				     const char *buf, size_t count)
 {
 	struct scu_data *data = dev_get_drvdata(dev);
-	long magic;
+	unsigned long long magic;
 	int err;
 
-	err = kstrtol(buf, 10, &magic);
+	err = kstrtoull(buf, 10, &magic);
 	if (err)
 		return err;
 
-	data->have_write_magic = magic == 5482328594;
+	data->have_write_magic = magic == 5482328594ULL;
 
 	return count;
 }
