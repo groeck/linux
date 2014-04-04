@@ -23,8 +23,11 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/gpio.h>
+#include <linux/irq.h>
+#include <linux/irqdomain.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/lpc_ich.h>
+#include <linux/workqueue.h>
 
 #define DRV_NAME "gpio_ich"
 
@@ -106,6 +109,12 @@ static struct {
 	u32 orig_gpio_ctrl;	/* Orig CTRL value, used to restore on exit */
 	u8 use_gpio;		/* Which GPIO groups are usable */
 	int outlvl_cache[3];	/* cached output values */
+	struct irq_domain *domain;
+	u32 value[4];		/* most recent pin values */
+	u32 enabled[4];		/* interrupt enable mask */
+	u8 irqtype[128];	/* interrupt type */
+	struct workqueue_struct *workqueue;
+	struct delayed_work work;
 } ichx_priv;
 
 static int modparam_gpiobase = -1;	/* dynamic */
@@ -278,6 +287,148 @@ static void ichx_gpio_set(struct gpio_chip *chip, unsigned nr, int val)
 	ichx_write_bit(GPIO_LVL, nr, val, 0);
 }
 
+static int ichx_gpio_irq_type(struct irq_data *d, unsigned type)
+{
+	u32 hwirq = irqd_to_hwirq(d);
+
+	if (hwirq >= ichx_priv.chip.ngpio)
+		return -EINVAL;
+
+	if (hwirq >= ARRAY_SIZE(ichx_priv.irqtype))
+		return -EINVAL;
+
+	ichx_priv.irqtype[hwirq] = type;
+	return 0;
+}
+
+static int ichx_gpio_to_irq(struct gpio_chip *chip, unsigned offset)
+{
+	return irq_create_mapping(ichx_priv.domain, offset);
+}
+
+/* Interrupt poll function */
+static void ichx_gpio_irqpoll(struct work_struct *work)
+{
+	u32 oldval, val, enabled, bit;
+	int i, pin, gpio, num;
+	unsigned long flags;
+	u8 type;
+
+	spin_lock_irqsave(&ichx_priv.lock, flags);
+
+	/* Check for changed pin states */
+	num = DIV_ROUND_UP(ichx_priv.chip.ngpio, 32);
+	for (i = 0; i < num; i++) {
+		val = ICHX_READ(ichx_regs[GPIO_LVL][i], ichx_priv.gpio_base);
+		oldval = ichx_priv.value[i];
+		ichx_priv.value[i] = val;
+		enabled = ichx_priv.enabled[i];
+
+		while (enabled) {
+			pin = __ffs(enabled);
+			bit = BIT(pin);
+			gpio = i * 32 + pin;
+			type = ichx_priv.irqtype[gpio];
+			if (((type & IRQ_TYPE_LEVEL_LOW) && !(val & bit)) ||
+			    ((type & IRQ_TYPE_LEVEL_HIGH) && (val & bit)) ||
+			    ((type & IRQ_TYPE_EDGE_RISING)
+			     && !(oldval & bit) && (val & bit)) ||
+			    ((type & IRQ_TYPE_EDGE_FALLING)
+			     && (oldval & bit) && !(val & bit))) {
+				unsigned int irq;
+				irq = irq_find_mapping(ichx_priv.domain, gpio);
+				if (irq >= 0)
+					generic_handle_irq(irq);
+			}
+			enabled &= ~bit;
+		}
+	}
+	queue_delayed_work(ichx_priv.workqueue, &ichx_priv.work,
+			   msecs_to_jiffies(10));
+	spin_unlock_irqrestore(&ichx_priv.lock, flags);
+}
+
+static void ichx_gpio_irq_unmask(struct irq_data *d)
+{
+}
+
+static void ichx_gpio_irq_mask(struct irq_data *d)
+{
+}
+
+static void ichx_gpio_irq_enable(struct irq_data *d)
+{
+	u32 hwirq = irqd_to_hwirq(d);
+	int index = hwirq / 32;
+	unsigned long flags;
+
+	spin_lock_irqsave(&ichx_priv.lock, flags);
+	ichx_priv.enabled[index] |= BIT(hwirq % 32);
+	queue_delayed_work(ichx_priv.workqueue, &ichx_priv.work, 0);
+	spin_unlock_irqrestore(&ichx_priv.lock, flags);
+}
+
+static void ichx_gpio_irq_disable(struct irq_data *d)
+{
+	u32 hwirq = irqd_to_hwirq(d);
+	int index = hwirq / 32;
+	bool enabled = false;
+	unsigned long flags;
+	int i;
+
+	spin_lock_irqsave(&ichx_priv.lock, flags);
+	ichx_priv.enabled[index] &= ~BIT(hwirq % 32);
+
+	for (i = 0; i < ARRAY_SIZE(ichx_priv.enabled); i++) {
+		if (ichx_priv.enabled[i]) {
+			enabled = true;
+			break;
+		}
+	}
+	if (!enabled)
+		cancel_delayed_work_sync(&ichx_priv.work);
+	spin_unlock_irqrestore(&ichx_priv.lock, flags);
+}
+
+static struct irq_chip ichx_gpio_irqchip = {
+	.name = "ICHX-GPIO",
+	.irq_mask = ichx_gpio_irq_mask,
+	.irq_unmask = ichx_gpio_irq_unmask,
+	.irq_enable = ichx_gpio_irq_enable,
+	.irq_disable = ichx_gpio_irq_disable,
+	.irq_set_type = ichx_gpio_irq_type,
+	.flags = IRQCHIP_SKIP_SET_WAKE,
+};
+
+static void ichx_gpio_irq_init_hw(void)
+{
+	unsigned long flags;
+	int i, num;
+
+	num = DIV_ROUND_UP(ichx_priv.chip.ngpio, 32);
+	spin_lock_irqsave(&ichx_priv.lock, flags);
+	for (i = 0; i < num; i++) {
+		ichx_priv.value[i] = ICHX_READ(ichx_regs[GPIO_LVL][i],
+					       ichx_priv.gpio_base);
+	}
+	spin_unlock_irqrestore(&ichx_priv.lock, flags);
+}
+
+static int ichx_gpio_irq_map(struct irq_domain *d, unsigned int irq,
+			     irq_hw_number_t hwirq)
+{
+	irq_set_chip_and_handler_name(irq, &ichx_gpio_irqchip, handle_simple_irq,
+				      "demux");
+	irq_set_chip_data(irq, &ichx_priv);
+	irq_set_irq_type(irq, IRQ_TYPE_NONE);
+
+	return 0;
+}
+
+static const struct irq_domain_ops ichx_gpio_irq_ops = {
+	.map = ichx_gpio_irq_map,
+};
+
 static void ichx_gpiolib_setup(struct gpio_chip *chip)
 {
 	chip->owner = THIS_MODULE;
@@ -298,6 +449,7 @@ static void ichx_gpiolib_setup(struct gpio_chip *chip)
 	chip->ngpio = ichx_priv.desc->ngpio;
 	chip->can_sleep = false;
 	chip->dbg_show = NULL;
+	chip->to_irq = ichx_gpio_to_irq;
 }
 
 /* ICH6-based, 631xesb-based */
@@ -498,7 +650,25 @@ static int ichx_gpio_probe(struct platform_device *pdev)
 	ichx_priv.pm_base = res_pm;
 
 init:
+	ichx_priv.workqueue = create_singlethread_workqueue("ichx-gpio-poller");
+	if (ichx_priv.workqueue == NULL) {
+		err = -ENOMEM;
+		goto wq_err;
+	}
+	INIT_DELAYED_WORK(&ichx_priv.work, ichx_gpio_irqpoll);
+
 	ichx_gpiolib_setup(&ichx_priv.chip);
+
+	ichx_priv.domain = irq_domain_add_linear(NULL, ichx_priv.chip.ngpio,
+						 &ichx_gpio_irq_ops,
+						 &ichx_priv);
+	if (!ichx_priv.domain) {
+		err = -ENXIO;
+		goto irq_err;
+	}
+
+	ichx_gpio_irq_init_hw();
+
 	err = gpiochip_add(&ichx_priv.chip);
 	if (err) {
 		pr_err("Failed to register GPIOs\n");
@@ -511,6 +681,10 @@ init:
 	return 0;
 
 add_err:
+	irq_domain_remove(ichx_priv.domain);
+irq_err:
+	destroy_workqueue(ichx_priv.workqueue);
+wq_err:
 	ichx_gpio_release_regions(ichx_priv.gpio_base, ichx_priv.use_gpio);
 	if (ichx_priv.pm_base)
 		release_region(ichx_priv.pm_base->start,
@@ -521,6 +695,10 @@ add_err:
 static int ichx_gpio_remove(struct platform_device *pdev)
 {
 	gpiochip_remove(&ichx_priv.chip);
+
+	irq_domain_remove(ichx_priv.domain);
+	cancel_delayed_work_sync(&ichx_priv.work);
+	destroy_workqueue(ichx_priv.workqueue);
 
 	ichx_gpio_release_regions(ichx_priv.gpio_base, ichx_priv.use_gpio);
 	if (ichx_priv.pm_base)
