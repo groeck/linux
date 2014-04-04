@@ -821,24 +821,61 @@ static int pca9557_teardown(struct i2c_client *client,
 	return 0;
 }
 
+static int scu_gpiochip_match_name(struct gpio_chip *chip, void *data)
+{
+	return !strcmp(chip->label, data);
+}
+
+static struct gpio_chip *scu_find_chip_by_name(const char *name)
+{
+	return gpiochip_find((void *)name, scu_gpiochip_match_name);
+}
+
+static int pch_gpio_setup(void)
+{
+	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
+
+	if (chip) {
+		/* 0-3 (input), 16-17 (output), 20-21 (output) */
+		pca9538_common_setup(chip->base, 22, 0x33000f, 0x000f, 0x0);
+	}
+
+	return 0;
+}
+
+static int pch_gpio_teardown(void)
+{
+	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
+
+	if (chip)
+		pca95xx_common_teardown(chip->base, 22, 0x33000f);
+
+	return 0;
+}
+
 static struct pca953x_platform_data scu_pca953x_pdata[] = {
 	[0] = {.gpio_base = SCU_EXT_GPIO_BASE(0),
+	       .irq_base = -1,
 	       .setup = pca9538_ext0_setup,
 	       .teardown = pca9538_ext0_teardown,
 	       .names = pca9538_ext0_gpio_names},
 	[1] = {.gpio_base = SCU_EXT_GPIO_BASE(1),
+	       .irq_base = -1,
 	       .setup = pca9538_ext1_setup,
 	       .teardown = pca9538_ext1_teardown,
 	       .names = pca9538_ext1_gpio_names},
 	[2] = {.gpio_base = SCU_EXT_GPIO_BASE(2),
+	       .irq_base = -1,
 	       .setup = pca9538_ext2_setup,
 	       .teardown = pca9538_ext2_teardown,
 	       .names = pca9538_ext2_gpio_names},
 	[3] = {.gpio_base = SCU_EXT_GPIO_BASE(3),
+	       .irq_base = -1,
 	       .setup = pca9538_ext3_setup,
 	       .teardown = pca9538_ext3_teardown,
 	       .names = pca9538_ext3_gpio_names},
 	[4] = {.gpio_base = SCU_EXT_GPIO_BASE(4),
+	       .irq_base = -1,
 	       .setup = pca9557_setup,
 	       .teardown = pca9557_teardown,
 	       .names = pca9557_gpio_names},
@@ -1109,6 +1146,8 @@ const char *scu_modules[] = {
 	"kempld-core",
 	"i2c-kempld",
 	"spi-sc18is602",
+	"lpc_ich",
+	"gpio_ich",
 	NULL
 };
 
@@ -1209,6 +1248,8 @@ static int scu_probe(struct platform_device *pdev)
 		goto error_i2c_client;
 
 	pca_leds_register(dev, data);
+	pch_gpio_setup();
+
 	ret = sysfs_create_group(&dev->kobj, &scu_base_group);
 	if (ret)
 		goto error_group;
@@ -1216,6 +1257,7 @@ static int scu_probe(struct platform_device *pdev)
 	return 0;
 
 error_group:
+	pch_gpio_teardown();
 	pca_leds_unregister(data);
 error_i2c_client:
 	for (i = 0; i < ARRAY_SIZE(data->client) && data->client[i]; i++)
@@ -1235,6 +1277,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
+	pch_gpio_teardown();
 	pca_leds_unregister(data);
 
 	for (i = 0; i < ARRAY_SIZE(data->spidev); i++)
