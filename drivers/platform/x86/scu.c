@@ -719,17 +719,20 @@ static int pca9538_common_setup(unsigned gpio_base, unsigned ngpio, u32 mask,
 				u32 is_input, u32 is_active)
 {
 	int i;
+	unsigned long flags;
 
 	for (i = 0; i < ngpio; i++) {
 		if (!(mask & (1 << i)))
 			continue;
-		gpio_request(gpio_base + i, 0);
-		if (is_input & (1 << i))
-			gpio_direction_input(gpio_base+i);
-		else
-			gpio_direction_output(gpio_base + i,
-					      !!(is_active & (1 << i)));
-		gpio_export(gpio_base + i, 0);
+		flags = GPIOF_EXPORT_DIR_FIXED;
+		if (is_input & (1 << i)) {
+			flags |= GPIOF_DIR_IN;
+		} else {
+			flags |= GPIOF_DIR_OUT;
+			if (is_active & (1 << i))
+				flags |= GPIOF_INIT_HIGH;
+		}
+		gpio_request_one(gpio_base + i, flags, NULL);
 	}
 	return 0;
 }
@@ -839,7 +842,6 @@ static int pch_gpio_setup(void)
 		/* 0-3 (input), 16-17 (output), 20-21 (output) */
 		pca9538_common_setup(chip->base, 22, 0x33000f, 0x000f, 0x0);
 	}
-
 	return 0;
 }
 
