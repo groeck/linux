@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/leds.h>
+#include <linux/mdio-gpio.h>
 #include <linux/platform_device.h>
 #include <linux/gpio.h>
 #include <linux/err.h>
@@ -39,6 +40,7 @@
 #endif
 #include <linux/platform_data/pca953x.h>
 #include <linux/lis3lv02d.h>
+#include <net/dsa.h>
 #include <linux/sysfs.h>
 #include <linux/spi/spi.h>
 #include <linux/proc_fs.h>
@@ -111,6 +113,7 @@ struct scu_platform_data {
 
 struct scu_data {
 	struct device *dev;			/* Pointer to platform device */
+	struct platform_device *mdio_dev;	/* pointer to MDIO device */
 	struct proc_dir_entry *rave_proc_dir;
 	struct mutex write_lock;
 	struct platform_device *leds_pdev[3];
@@ -834,23 +837,37 @@ static struct gpio_chip *scu_find_chip_by_name(const char *name)
 	return gpiochip_find((void *)name, scu_gpiochip_match_name);
 }
 
-static int pch_gpio_setup(void)
+static int pch_gpio_setup(struct scu_data *data)
 {
 	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
+	struct mdio_gpio_platform_data mdio_pdata = { };
 
 	if (chip) {
-		/* 0-3 (input), 16-17 (output), 20-21 (output) */
-		pca9538_common_setup(chip->base, 22, 0x33000f, 0x000f, 0x0);
+		mdio_pdata.mdc = chip->base + 16;	/* GPO0 */
+		mdio_pdata.mdo = chip->base + 17;	/* GPO1 */
+		mdio_pdata.mdio = chip->base + 2;	/* GPI2 */
+
+		data->mdio_dev = platform_device_register_data(&platform_bus,
+							       "mdio-gpio", 0,
+							       &mdio_pdata,
+							       sizeof(mdio_pdata));
+		if (IS_ERR(data->mdio_dev))
+			data->mdio_dev = NULL;
+
+		/* generic: 0-1, 3 (input), 20-21 (output) */
+		pca9538_common_setup(chip->base, 22, 0x30000b, 0x00000b, 0x0);
 	}
 	return 0;
 }
 
-static int pch_gpio_teardown(void)
+static int pch_gpio_teardown(struct scu_data *data)
 {
 	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
 
-	if (chip)
-		pca95xx_common_teardown(chip->base, 22, 0x33000f);
+	if (chip) {
+		platform_device_unregister(data->mdio_dev);
+		pca95xx_common_teardown(chip->base, 22, 0x30000b);
+	}
 
 	return 0;
 }
@@ -1150,6 +1167,7 @@ const char *scu_modules[] = {
 	"spi-sc18is602",
 	"lpc_ich",
 	"gpio_ich",
+	"mdio-gpio",
 	NULL
 };
 
@@ -1250,7 +1268,7 @@ static int scu_probe(struct platform_device *pdev)
 		goto error_i2c_client;
 
 	pca_leds_register(dev, data);
-	pch_gpio_setup();
+	pch_gpio_setup(data);
 
 	ret = sysfs_create_group(&dev->kobj, &scu_base_group);
 	if (ret)
@@ -1259,7 +1277,7 @@ static int scu_probe(struct platform_device *pdev)
 	return 0;
 
 error_group:
-	pch_gpio_teardown();
+	pch_gpio_teardown(data);
 	pca_leds_unregister(data);
 error_i2c_client:
 	for (i = 0; i < ARRAY_SIZE(data->client) && data->client[i]; i++)
@@ -1279,7 +1297,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
-	pch_gpio_teardown();
+	pch_gpio_teardown(data);
 	pca_leds_unregister(data);
 
 	for (i = 0; i < ARRAY_SIZE(data->spidev); i++)
