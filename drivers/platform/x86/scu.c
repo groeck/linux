@@ -18,6 +18,8 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/types.h>
@@ -40,11 +42,12 @@
 #endif
 #include <linux/platform_data/pca953x.h>
 #include <linux/lis3lv02d.h>
-#include <net/dsa.h>
 #include <linux/sysfs.h>
 #include <linux/spi/spi.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <linux/netdevice.h>
+#include <net/dsa.h>
 #include <asm/processor.h>
 #include <asm/byteorder.h>
 
@@ -112,8 +115,10 @@ struct scu_platform_data {
 };
 
 struct scu_data {
-	struct device *dev;			/* Pointer to platform device */
-	struct platform_device *mdio_dev;	/* pointer to MDIO device */
+	struct device *dev;			/* SCU platform device */
+	struct net_device *netdev;		/* Ethernet device */
+	struct platform_device *mdio_dev;	/* MDIO device */
+	struct platform_device *dsa_dev;	/* DSA device */
 	struct proc_dir_entry *rave_proc_dir;
 	struct mutex write_lock;
 	struct platform_device *leds_pdev[3];
@@ -851,9 +856,10 @@ static int pch_gpio_setup(struct scu_data *data)
 							       "mdio-gpio", 0,
 							       &mdio_pdata,
 							       sizeof(mdio_pdata));
-		if (IS_ERR(data->mdio_dev))
+		if (IS_ERR(data->mdio_dev)) {
+			pr_err("Failed to register MDIO device\n");
 			data->mdio_dev = NULL;
-
+		}
 		/* generic: 0-1, 3 (input), 20-21 (output) */
 		pca9538_common_setup(chip->base, 22, 0x30000b, 0x00000b, 0x0);
 	}
@@ -1029,6 +1035,38 @@ static int scu_instantiate_spi(struct scu_data *data,
 	return 0;
 }
 
+static struct dsa_chip_data switch_chip_data = {
+        .port_names[0]	= "cpu",
+        .port_names[1]	= "netaux",
+        .port_names[2]	= 0,	/* unused */
+        .port_names[3]	= "netright",
+        .port_names[4]	= "netleft",
+        .port_names[5]	= 0,	/* unused */
+};
+
+static void scu_setup_ethernet_switch(struct scu_data *data)
+{
+	struct dsa_platform_data switch_data = {
+        	.nr_chips = 1,
+        	.chip = &switch_chip_data,
+	};
+
+	if (!data->mdio_dev) {
+		pr_err("no mdio device\n");
+		return;
+	}
+
+	switch_data.netdev = &data->netdev->dev;
+	switch_chip_data.mii_bus = &data->mdio_dev->dev;
+	data->dsa_dev = platform_device_register_data(&platform_bus, "dsa",
+						      0, &switch_data,
+						      sizeof(switch_data));
+	if (IS_ERR(data->dsa_dev)) {
+		pr_err("Failed to register DSA device\n");
+		data->dsa_dev = NULL;
+	}
+}
+
 /*
  * This is the callback function when a a specifc at24 eeprom is found.
  * Its reads out the eeprom contents via the read function passed back in via
@@ -1168,6 +1206,7 @@ const char *scu_modules[] = {
 	"lpc_ich",
 	"gpio_ich",
 	"mdio-gpio",
+	"dsa",
 	NULL
 };
 
@@ -1239,13 +1278,19 @@ static int scu_probe(struct platform_device *pdev)
 
 	mutex_init(&data->write_lock);
 
+	data->netdev = dev_get_by_name(&init_net, "eth0");
+	if (!data->netdev)
+		return -EPROBE_DEFER;
+
 	/*
 	 * The adapter driver should have been loaded by now.
 	 * If not, try again later.
 	 */
 	adapter = scu_find_i2c_adapter("i2c-kempld");
-	if (!adapter)
-		return -EPROBE_DEFER;
+	if (!adapter) {
+		ret = -EPROBE_DEFER;
+		goto error_put_net;
+	}
 	data->adapter = adapter;
 
 	data->rave_proc_dir = proc_mkdir("rave", NULL);
@@ -1269,6 +1314,7 @@ static int scu_probe(struct platform_device *pdev)
 
 	pca_leds_register(dev, data);
 	pch_gpio_setup(data);
+	scu_setup_ethernet_switch(data);
 
 	ret = sysfs_create_group(&dev->kobj, &scu_base_group);
 	if (ret)
@@ -1277,6 +1323,7 @@ static int scu_probe(struct platform_device *pdev)
 	return 0;
 
 error_group:
+	platform_device_unregister(data->dsa_dev);
 	pch_gpio_teardown(data);
 	pca_leds_unregister(data);
 error_i2c_client:
@@ -1286,6 +1333,8 @@ error_remove:
 	proc_remove(data->rave_proc_dir);
 error_put:
 	put_device(&adapter->dev);
+error_put_net:
+	dev_put(data->netdev);
 	return ret;
 }
 
@@ -1297,6 +1346,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
+	platform_device_unregister(data->dsa_dev);
 	pch_gpio_teardown(data);
 	pca_leds_unregister(data);
 
@@ -1310,6 +1360,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 	proc_remove(data->rave_proc_dir);
 
 	put_device(&data->adapter->dev);
+	dev_put(data->netdev);
 
 	return 0;
 }
