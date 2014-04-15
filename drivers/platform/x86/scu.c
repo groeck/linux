@@ -848,8 +848,9 @@ static int pch_gpio_setup(struct scu_data *data)
 	struct mdio_gpio_platform_data mdio_pdata = { };
 
 	if (chip) {
-		mdio_pdata.mdc = chip->base + 16;	/* GPO0 */
-		mdio_pdata.mdo = chip->base + 17;	/* GPO1 */
+		mdio_pdata.mdc = chip->base + 17;	/* GPO1 */
+		mdio_pdata.mdo = chip->base + 21;	/* GPO2 */
+		mdio_pdata.mdo_active_low = true;
 		mdio_pdata.mdio = chip->base + 2;	/* GPI2 */
 
 		data->mdio_dev = platform_device_register_data(&platform_bus,
@@ -860,8 +861,8 @@ static int pch_gpio_setup(struct scu_data *data)
 			pr_err("Failed to register MDIO device\n");
 			data->mdio_dev = NULL;
 		}
-		/* generic: 0-1, 3 (input), 20-21 (output) */
-		scu_gpio_common_setup(chip->base, 22, 0x30000b, 0x00000b, 0x0);
+		/* generic: 0-1, 3 (input), 16, 20 (output) */
+		scu_gpio_common_setup(chip->base, 22, 0x11000b, 0x00000b, 0x0);
 	}
 	return 0;
 }
