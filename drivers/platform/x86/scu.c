@@ -18,8 +18,6 @@
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/types.h>
@@ -103,6 +101,8 @@ struct __packed eeprom_data {
 
 enum scu_version { scu1, scu2, scu3 };
 
+struct scu_data;
+
 struct scu_platform_data {
 	const char *board_type;
 	const char *part_number;
@@ -112,6 +112,8 @@ struct scu_platform_data {
 	int num_i2c_board_info;
 	struct spi_board_info *spi_board_info;
 	int num_spi_board_info;
+	void (*init)(struct scu_data *);
+	void (*remove)(struct scu_data *);
 };
 
 struct scu_data {
@@ -842,7 +844,7 @@ static struct gpio_chip *scu_find_chip_by_name(const char *name)
 	return gpiochip_find((void *)name, scu_gpiochip_match_name);
 }
 
-static int pch_gpio_setup(struct scu_data *data)
+static void pch_gpio_setup(struct scu_data *data)
 {
 	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
 	struct mdio_gpio_platform_data mdio_pdata = { };
@@ -858,16 +860,15 @@ static int pch_gpio_setup(struct scu_data *data)
 							       &mdio_pdata,
 							       sizeof(mdio_pdata));
 		if (IS_ERR(data->mdio_dev)) {
-			pr_err("Failed to register MDIO device\n");
+			dev_err(data->dev, "Failed to register MDIO device\n");
 			data->mdio_dev = NULL;
 		}
 		/* generic: 0-1, 3 (input), 16, 20 (output) */
 		scu_gpio_common_setup(chip->base, 22, 0x11000b, 0x00000b, 0x0);
 	}
-	return 0;
 }
 
-static int pch_gpio_teardown(struct scu_data *data)
+static void pch_gpio_teardown(struct scu_data *data)
 {
 	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
 
@@ -875,8 +876,46 @@ static int pch_gpio_teardown(struct scu_data *data)
 		platform_device_unregister(data->mdio_dev);
 		scu_gpio_common_teardown(chip->base, 22, 0x30000b);
 	}
+}
 
-	return 0;
+static struct dsa_chip_data switch_chip_data = {
+        .port_names[0]	= "cpu",
+        .port_names[1]	= "netaux",
+        .port_names[2]	= 0,	/* unused */
+        .port_names[3]	= "netright",
+        .port_names[4]	= "netleft",
+        .port_names[5]	= 0,	/* unused */
+};
+
+static void scu_setup_ethernet_switch(struct scu_data *data)
+{
+	struct dsa_platform_data switch_data = {
+        	.nr_chips = 1,
+        	.chip = &switch_chip_data,
+	};
+
+	switch_data.netdev = &data->netdev->dev;
+	switch_chip_data.mii_bus = &data->mdio_dev->dev;
+	data->dsa_dev = platform_device_register_data(&platform_bus, "dsa",
+						      0, &switch_data,
+						      sizeof(switch_data));
+	if (IS_ERR(data->dsa_dev)) {
+		dev_err(data->dev, "Failed to register DSA device\n");
+		data->dsa_dev = NULL;
+	}
+}
+
+static void scu3_init(struct scu_data *data)
+{
+	pch_gpio_setup(data);
+	if (data->mdio_dev)
+		scu_setup_ethernet_switch(data);
+}
+
+static void scu3_remove(struct scu_data *data)
+{
+	pch_gpio_teardown(data);
+	platform_device_unregister(data->dsa_dev);
 }
 
 static struct pca953x_platform_data scu_pca953x_pdata[] = {
@@ -991,6 +1030,8 @@ static struct scu_platform_data scu_platform_data[] = {
 		.eeprom_len = SCU_EEPROM_LEN_GEN3,
 		.i2c_board_info = scu_i2c_info_scu3,
 		.num_i2c_board_info = ARRAY_SIZE(scu_i2c_info_scu3),
+		.init = scu3_init,
+		.remove = scu3_remove,
 	},
 };
 
@@ -1034,38 +1075,6 @@ static int scu_instantiate_spi(struct scu_data *data,
 		info++;
 	}
 	return 0;
-}
-
-static struct dsa_chip_data switch_chip_data = {
-        .port_names[0]	= "cpu",
-        .port_names[1]	= "netaux",
-        .port_names[2]	= 0,	/* unused */
-        .port_names[3]	= "netright",
-        .port_names[4]	= "netleft",
-        .port_names[5]	= 0,	/* unused */
-};
-
-static void scu_setup_ethernet_switch(struct scu_data *data)
-{
-	struct dsa_platform_data switch_data = {
-        	.nr_chips = 1,
-        	.chip = &switch_chip_data,
-	};
-
-	if (!data->mdio_dev) {
-		pr_err("no mdio device\n");
-		return;
-	}
-
-	switch_data.netdev = &data->netdev->dev;
-	switch_chip_data.mii_bus = &data->mdio_dev->dev;
-	data->dsa_dev = platform_device_register_data(&platform_bus, "dsa",
-						      0, &switch_data,
-						      sizeof(switch_data));
-	if (IS_ERR(data->dsa_dev)) {
-		pr_err("Failed to register DSA device\n");
-		data->dsa_dev = NULL;
-	}
 }
 
 /*
@@ -1127,6 +1136,9 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	if (pdata->spi_board_info)
 		scu_instantiate_spi(data, pdata->spi_board_info,
 				    pdata->num_spi_board_info);
+
+	if (pdata->init)
+		pdata->init(data);
 
 	len = data->pdata->eeprom_len;
 
@@ -1314,8 +1326,6 @@ static int scu_probe(struct platform_device *pdev)
 		goto error_i2c_client;
 
 	pca_leds_register(dev, data);
-	pch_gpio_setup(data);
-	scu_setup_ethernet_switch(data);
 
 	ret = sysfs_create_group(&dev->kobj, &scu_base_group);
 	if (ret)
@@ -1324,8 +1334,6 @@ static int scu_probe(struct platform_device *pdev)
 	return 0;
 
 error_group:
-	platform_device_unregister(data->dsa_dev);
-	pch_gpio_teardown(data);
 	pca_leds_unregister(data);
 error_i2c_client:
 	for (i = 0; i < ARRAY_SIZE(data->client) && data->client[i]; i++)
@@ -1347,8 +1355,9 @@ static int __exit scu_remove(struct platform_device *pdev)
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
-	platform_device_unregister(data->dsa_dev);
-	pch_gpio_teardown(data);
+	if (data->pdata->remove)
+		data->pdata->remove(data);
+
 	pca_leds_unregister(data);
 
 	for (i = 0; i < ARRAY_SIZE(data->spidev); i++)
