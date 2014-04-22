@@ -145,7 +145,7 @@ struct scu_data {
 #define SCU_PARTNUM_GEN2	"00-5010"
 #define SCU_PARTNUM_GEN3	"00-5013"
 
-#define SCU_WRITE_MAGIC		5482328594
+#define SCU_WRITE_MAGIC		5482328594ULL
 
 /* sysfs */
 
@@ -204,7 +204,7 @@ static ssize_t attribute_magic_store(struct device *dev,
 	if (err)
 		return err;
 
-	data->have_write_magic = magic == 5482328594ULL;
+	data->have_write_magic = magic == SCU_WRITE_MAGIC;
 
 	return count;
 }
