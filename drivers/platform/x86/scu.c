@@ -240,6 +240,7 @@ static ssize_t scu_object_store(struct scu_data *data, int offset,
 	if (!data->eeprom_valid) {
 		offset = 0;
 		len = data->pdata->eeprom_len;
+		out = (char *)&data->eeprom;
 	}
 
 	ret = data->macc->write(data->macc, out, 0x300 + offset, len);
