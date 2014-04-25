@@ -727,7 +727,7 @@ static const char *pca9557_gpio_names[8] = {
 };
 
 static int scu_gpio_common_setup(unsigned gpio_base, unsigned ngpio, u32 mask,
-				 u32 is_input, u32 is_active)
+				 u32 is_input, u32 is_active, u32 active_low)
 {
 	int i;
 	unsigned long flags;
@@ -743,6 +743,8 @@ static int scu_gpio_common_setup(unsigned gpio_base, unsigned ngpio, u32 mask,
 			if (is_active & (1 << i))
 				flags |= GPIOF_INIT_HIGH;
 		}
+		if (active_low & (1 << i))
+			flags |= GPIOF_ACTIVE_LOW;
 		gpio_request_one(gpio_base + i, flags, NULL);
 	}
 	return 0;
@@ -751,35 +753,35 @@ static int scu_gpio_common_setup(unsigned gpio_base, unsigned ngpio, u32 mask,
 static int pca9538_ext0_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	scu_gpio_common_setup(gpio_base, ngpio, 0xff, 0x33, 0xcc);
+	scu_gpio_common_setup(gpio_base, ngpio, 0xff, 0x33, 0xcc, 0x00);
 	return 0;
 }
 
 static int pca9538_ext1_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	scu_gpio_common_setup(gpio_base, ngpio, 0xf0, 0x00, 0x00);
+	scu_gpio_common_setup(gpio_base, ngpio, 0xf0, 0x00, 0x00, 0x00);
 	return 0;
 }
 
 static int pca9538_ext2_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	scu_gpio_common_setup(gpio_base, ngpio, 0xc0, 0x80, 0x40);
+	scu_gpio_common_setup(gpio_base, ngpio, 0xc0, 0x80, 0x40, 0x00);
 	return 0;
 }
 
 static int pca9538_ext3_setup(struct i2c_client *client,
 			      unsigned gpio_base, unsigned ngpio, void *context)
 {
-	scu_gpio_common_setup(gpio_base, ngpio, 0xc0, 0x80, 0x40);
+	scu_gpio_common_setup(gpio_base, ngpio, 0xc0, 0x80, 0x40, 0x00);
 	return 0;
 }
 
 static int pca9557_setup(struct i2c_client *client,
 			 unsigned gpio_base, unsigned ngpio, void *context)
 {
-	scu_gpio_common_setup(gpio_base, ngpio, 0x3f, 0x3f, 0x00);
+	scu_gpio_common_setup(gpio_base, ngpio, 0x3f, 0x3f, 0x00, 0x3f);
 	return 0;
 }
 
@@ -865,7 +867,8 @@ static void pch_gpio_setup(struct scu_data *data)
 			data->mdio_dev = NULL;
 		}
 		/* generic: 0-1, 3 (input), 16, 20 (output) */
-		scu_gpio_common_setup(chip->base, 22, 0x11000b, 0x00000b, 0x0);
+		scu_gpio_common_setup(chip->base, 22, 0x11000b, 0x00000b, 0x0,
+				      0x0);
 	}
 }
 
