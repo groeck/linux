@@ -28,7 +28,6 @@
 #include <linux/err.h>
 #include <linux/mutex.h>
 #include <linux/device.h>
-#include <linux/miscdevice.h>
 #include <linux/watchdog.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
@@ -60,10 +59,8 @@ struct scu_pic_data {
 	s8 temp[2];
 
 	/* wdt data */
-	unsigned long wdt_status;
-	struct miscdevice wdt_miscdev;
+	struct watchdog_device wdt_dev;
 	struct timer_list wdt_timer;
-	int wdt_timeout;
 	unsigned long wdt_lastping;
 
 	/* led data */
@@ -481,199 +478,84 @@ static void scu_pic_led_exit(struct i2c_client *client)
 
 /* wdt */
 
-static void scu_pic_wdt_ping(struct scu_pic_data *data)
+static int scu_pic_wdt_ping(struct watchdog_device *wdev)
 {
+	struct scu_pic_data *data = watchdog_get_drvdata(wdev);
+
 	mutex_lock(&data->i2c_lock);
 	/* Any host communication resets watchdog */
 	if (data->client)
 		(void)scu_pic_read_value(data->client, I2C_GET_SCU_PIC_WDT_STATE);
 	mod_timer(&data->wdt_timer,
-		  jiffies + min(SCU_PIC_WDT_TIMEOUT / 2, data->wdt_timeout) * HZ);
+		  jiffies + min_t(unsigned long, SCU_PIC_WDT_TIMEOUT / 2,
+				  wdev->timeout) * HZ);
 	data->wdt_lastping = jiffies;
 	mutex_unlock(&data->i2c_lock);
+
+	return 0;
 }
 
-static void scu_pic_wdt_enable(struct scu_pic_data *data)
+static int scu_pic_wdt_start(struct watchdog_device *wdev)
 {
+	struct scu_pic_data *data = watchdog_get_drvdata(wdev);
+
 	mutex_lock(&data->i2c_lock);
 	if (data->client)
 		scu_pic_write_value(data->client, I2C_SET_SCU_PIC_WDT_STATE, 1);
-	mod_timer(&data->wdt_timer,
-		  jiffies + min(SCU_PIC_WDT_TIMEOUT / 2, data->wdt_timeout) * HZ);
+	mod_timer(&data->wdt_timer, jiffies + min_t(unsigned long,
+						    SCU_PIC_WDT_TIMEOUT / 2,
+						    wdev->timeout) * HZ);
 	mutex_unlock(&data->i2c_lock);
+
+	return 0;
 }
 
-static void scu_pic_wdt_disable(struct scu_pic_data *data)
+static int scu_pic_wdt_stop(struct watchdog_device *wdev)
 {
+	struct scu_pic_data *data = watchdog_get_drvdata(wdev);
+
 	mutex_lock(&data->i2c_lock);
 	if (data->client)
 		scu_pic_write_value(data->client, I2C_SET_SCU_PIC_WDT_STATE, 0);
 	del_timer(&data->wdt_timer);
 	mutex_unlock(&data->i2c_lock);
-}
-
-static int scu_pic_wdt_open(struct inode *inode, struct file *file)
-{
-	struct scu_pic_data *pos, *data = NULL;
-	bool is_open;
-
-	/*
-	 * Called from drivers/char/misc.c with misc_mtx held, and we
-	 * call misc_register() from scu_pic_probe() with scu_pic_data_mutex held.
-	 * Since misc_register() takes the misc_mtx lock, this is a possible
-	 * deadlock, so use mutex_trylock here.
-	 */
-	if (!mutex_trylock(&scu_pic_data_mutex))
-		return -ERESTARTSYS;
-	list_for_each_entry(pos, &scu_pic_data_list, list) {
-		if (pos->wdt_miscdev.minor == iminor(inode)) {
-			data = pos;
-			break;
-		}
-	}
-	if (!data)
-		return -ENODEV;
-
-	is_open = test_and_set_bit(WDT_IN_USE, &data->wdt_status);
-	if (!is_open)
-		kref_get(&data->kref);
-	mutex_unlock(&scu_pic_data_mutex);
-
-	if (is_open)
-		return -EBUSY;
-
-	scu_pic_wdt_enable(data);
-
-	clear_bit(WDT_EXPECT_CLOSE, &data->wdt_status);
-	file->private_data = data;
-	return nonseekable_open(inode, file);
-}
-
-static ssize_t scu_pic_wdt_write(struct file *file, const char *buf,
-					size_t len, loff_t *ppos)
-{
-	struct scu_pic_data *data = file->private_data;
-
-	if (len) {
-		if (!nowayout) {
-			size_t i;
-
-			clear_bit(WDT_EXPECT_CLOSE, &data->wdt_status);
-			for (i = 0; i != len; i++) {
-				char c;
-
-				if (get_user(c, buf + i))
-					return -EFAULT;
-				if (c == 'V')
-					set_bit(WDT_EXPECT_CLOSE,
-						&data->wdt_status);
-			}
-		}
-		scu_pic_wdt_ping(data);
-	}
-	return len;
-}
-
-static const struct watchdog_info ident = {
-	.options	= WDIOF_MAGICCLOSE | WDIOF_KEEPALIVEPING |
-				WDIOF_SETTIMEOUT,
-	.identity	= "SCU Pic Watchdog",
-};
-
-static long scu_pic_wdt_ioctl(struct file *file, unsigned int cmd,
-				unsigned long arg)
-{
-	struct scu_pic_data *data = file->private_data;
-	int ret = -ENOTTY;
-	int val;
-
-	switch (cmd) {
-	case WDIOC_GETSUPPORT:
-		ret = copy_to_user((struct watchdog_info *)arg, &ident,
-				   sizeof(ident)) ? -EFAULT : 0;
-		break;
-
-	case WDIOC_GETSTATUS:
-	case WDIOC_GETBOOTSTATUS:
-		ret = put_user(0, (int *)arg);
-		break;
-
-	case WDIOC_KEEPALIVE:
-		scu_pic_wdt_ping(data);
-		ret = 0;
-		break;
-	case WDIOC_SETTIMEOUT:
-		if (get_user(val, (int __user *)arg)) {
-			ret = -EFAULT;
-			break;
-		}
-		if (val <= 0 || val > 0xffff)
-			return -EINVAL;
-		data->wdt_timeout = val;
-		scu_pic_wdt_ping(data);
-		break;
-	case WDIOC_GETTIMEOUT:
-		ret = put_user(data->wdt_timeout, (int __user *)arg);
-		break;
-	case WDIOC_SETOPTIONS:
-		if (get_user(val, (int __user *)arg)) {
-			ret = -EFAULT;
-			break;
-		}
-		if (val & WDIOS_DISABLECARD) {
-			scu_pic_wdt_disable(data);
-			ret = 0;
-		} else if (val & WDIOS_ENABLECARD) {
-			scu_pic_wdt_ping(data);
-			ret = 0;
-		} else {
-			ret = -EINVAL;
-		}
-		break;
-	}
-	return ret;
-}
-
-static int scu_pic_wdt_release(struct inode *inode, struct file *file)
-{
-	struct scu_pic_data *data = file->private_data;
-
-	if (test_bit(WDT_EXPECT_CLOSE, &data->wdt_status)) {
-		scu_pic_wdt_disable(data);
-		clear_bit(WDT_EXPECT_CLOSE, &data->wdt_status);
-	} else {
-		scu_pic_wdt_ping(data);
-		dev_crit(&data->client->dev,
-			 "Device closed unexpectedly - timer will not stop\n");
-	}
-	clear_bit(WDT_IN_USE, &data->wdt_status);
-
-	mutex_lock(&scu_pic_data_mutex);
-	kref_put(&data->kref, scu_pic_release_resources);
-	mutex_unlock(&scu_pic_data_mutex);
 
 	return 0;
 }
 
-static const struct file_operations scu_pic_wdt_fops = {
-	.owner		= THIS_MODULE,
-	.llseek		= no_llseek,
-	.write		= scu_pic_wdt_write,
-	.unlocked_ioctl	= scu_pic_wdt_ioctl,
-	.open		= scu_pic_wdt_open,
-	.release	= scu_pic_wdt_release,
-};
+static int scu_pic_wdt_set_timeout(struct watchdog_device *wdev, unsigned int t)
+{
+	wdev->timeout = t;
+	scu_pic_wdt_ping(wdev);
+
+	return 0;
+}
 
 static void scu_pic_wdt_timerfunc(unsigned long d)
 {
-	struct scu_pic_data *data = (struct scu_pic_data *)d;
+	struct watchdog_device *wdev = (struct watchdog_device *)d;
+	struct scu_pic_data *data = watchdog_get_drvdata(wdev);
 
-	if (time_after(jiffies, data->wdt_lastping + data->wdt_timeout * HZ)) {
+	if (time_after(jiffies, data->wdt_lastping + wdev->timeout * HZ)) {
 	        pr_crit("Software watchdog timeout: Initiating system reboot.\n");
 		emergency_restart();
 	}
-	scu_pic_wdt_ping(data);
+	scu_pic_wdt_ping(wdev);
 }
+
+static const struct watchdog_info scu_pic_wdt_ident = {
+	.options	= WDIOF_MAGICCLOSE | WDIOF_KEEPALIVEPING |
+			  WDIOF_SETTIMEOUT,
+	.identity	= "SCU Pic Watchdog",
+};
+
+static const struct watchdog_ops scu_pic_wdt_ops = {
+	.owner		= THIS_MODULE,
+	.start		= scu_pic_wdt_start,
+	.stop		= scu_pic_wdt_stop,
+	.ping		= scu_pic_wdt_ping,
+	.set_timeout	= scu_pic_wdt_set_timeout,
+};
 
 static int scu_pic_wdt_init(struct i2c_client *client)
 {
@@ -682,22 +564,26 @@ static int scu_pic_wdt_init(struct i2c_client *client)
 
 	mutex_lock(&scu_pic_data_mutex);
 
-#if 0
-	/* Disable watchdog at startup */
+#if defined(CONFIG_SCU_PIC_MODULE)
+	/* Disable watchdog at startup if running as module */
 	scu_pic_write_value(data->client, I2C_SET_scu_pic_WDT_STATE, 0);
 #endif
 
-	data->wdt_timeout = SCU_PIC_WDT_TIMEOUT;
+	watchdog_set_drvdata(&data->wdt_dev, data);
+
 	data->wdt_timer.function = scu_pic_wdt_timerfunc;
-	data->wdt_timer.data = (unsigned long)data;
+	data->wdt_timer.data = (unsigned long)&data->wdt_dev;
 	init_timer(&data->wdt_timer);
 
-	data->wdt_miscdev.minor = WATCHDOG_MINOR;
-	data->wdt_miscdev.name = "watchdog";
-	data->wdt_miscdev.fops = &scu_pic_wdt_fops;
-	data->wdt_miscdev.parent = &client->dev;
+	data->wdt_dev.info = &scu_pic_wdt_ident;
+	data->wdt_dev.ops = &scu_pic_wdt_ops;
+	data->wdt_dev.timeout = SCU_PIC_WDT_TIMEOUT;
+	data->wdt_dev.min_timeout = 1;
+	data->wdt_dev.max_timeout = 0xffff;
+	watchdog_set_nowayout(&data->wdt_dev, nowayout);
+	data->wdt_dev.parent = client->dev.parent;
 
-	ret = misc_register(&data->wdt_miscdev);
+	ret = watchdog_register_device(&data->wdt_dev);
 	if (ret)
 		goto error;
 	list_add(&data->list, &scu_pic_data_list);
@@ -709,17 +595,10 @@ error:
 static int scu_pic_wdt_exit(struct i2c_client *client)
 {
 	struct scu_pic_data *data = i2c_get_clientdata(client);
-	int ret;
 
-	if (test_bit(WDT_IN_USE, &data->wdt_status)) {
-		scu_pic_wdt_disable(data);
-		clear_bit(WDT_IN_USE, &data->wdt_status);
-	}
 	del_timer(&data->wdt_timer);
 
-	ret = misc_deregister(&data->wdt_miscdev);
-	if (!ret)
-		data->wdt_miscdev.parent = NULL;
+	watchdog_unregister_device(&data->wdt_dev);
 	mutex_lock(&scu_pic_data_mutex);
 	list_del(&data->list);
 	mutex_unlock(&scu_pic_data_mutex);
@@ -729,7 +608,7 @@ static int scu_pic_wdt_exit(struct i2c_client *client)
 	data->client = NULL;
 	mutex_unlock(&data->i2c_lock);
 
-	return ret;
+	return 0;
 }
 
 /* device level functions */
@@ -834,23 +713,7 @@ static struct i2c_driver scu_pic_driver = {
 	.address_list	= normal_i2c,
 };
 
-#ifdef module_i2c_driver
 module_i2c_driver(scu_pic_driver);
-#else
-static int __init scu_pic_init(void)
-{
-	return i2c_add_driver(&scu_pic_driver);
-}
-
-static void __exit scu_pic_exit(void)
-{
-	i2c_del_driver(&scu_pic_driver);
-}
-
-module_init(scu_pic_init);
-module_exit(scu_pic_exit);
-
-#endif
 
 MODULE_AUTHOR("Guenter Roeck <linux@roeck-us.net>");
 MODULE_DESCRIPTION("SCU PIC driver");
