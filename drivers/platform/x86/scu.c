@@ -33,11 +33,7 @@
 #include <linux/i2c.h>
 #include <linux/i2c-gpio.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-#include <linux/i2c/at24.h>
-#else
 #include <linux/platform_data/at24.h>
-#endif
 #include <linux/platform_data/pca953x.h>
 #include <linux/lis3lv02d.h>
 #include <linux/sysfs.h>
