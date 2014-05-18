@@ -376,6 +376,9 @@ static int mv88e6352_setup(struct dsa_switch *ds)
 
 	ps->id = REG_READ(REG_PORT(0), 0x03) & 0xfff0;
 
+	if (dsa_is_unmanaged(ds))
+		return 0;
+
 	ret = mv88e6352_switch_reset(ds);
 	if (ret < 0)
 		return ret;

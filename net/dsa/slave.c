@@ -646,6 +646,20 @@ static int dsa_slave_get_eee(struct net_device *dev, struct ethtool_eee *e)
 	return ret;
 }
 
+static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	dev->stats.tx_dropped++;
+	kfree_skb(skb);
+	return NETDEV_TX_OK;
+}
+
+/* Minimal functionality in unmanaged mode */
+static const struct net_device_ops dummy_netdev_ops = {
+	.ndo_init		= dsa_slave_init,
+	.ndo_start_xmit		= dummy_xmit,
+	.ndo_do_ioctl		= dsa_slave_ioctl,
+};
+
 static const struct ethtool_ops dsa_slave_ethtool_ops = {
 	.get_settings		= dsa_slave_get_settings,
 	.set_settings		= dsa_slave_set_settings,
@@ -844,7 +858,9 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	p->parent = ds;
 	p->port = port;
 
-	switch (ds->dst->tag_protocol) {
+	if (dsa_is_unmanaged(ds))
+		slave_dev->netdev_ops = &dummy_netdev_ops;
+	else switch (ds->dst->tag_protocol) {
 #ifdef CONFIG_NET_DSA_TAG_DSA
 	case DSA_TAG_PROTO_DSA:
 		p->xmit = dsa_netdev_ops.xmit;

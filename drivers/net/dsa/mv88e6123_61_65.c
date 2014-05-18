@@ -283,6 +283,9 @@ static int mv88e6123_61_65_setup(struct dsa_switch *ds)
 	if (ret < 0)
 		return ret;
 
+	if (dsa_is_unmanaged(ds))
+		return 0;
+
 	ret = mv88e6123_61_65_switch_reset(ds);
 	if (ret < 0)
 		return ret;
