@@ -950,6 +950,8 @@ static struct i2c_board_info scu_i2c_info_scu2[] = {
 	{ I2C_BOARD_INFO("sc18is602", 0x28)},
 };
 
+#ifdef TESTING	/* removed from design */
+
 static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
 	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
 	    LIS3_CLICK_SINGLE_Z,
@@ -976,10 +978,13 @@ static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
 	.st_min_limits = {-32, 3, 3},
 	.st_max_limits = {-3, 32, 32},
 };
+#endif /* TESTING */
 
 static struct i2c_board_info scu_i2c_info_scu3[] = {
+#ifdef TESTING  /* removed from design */
 	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
 		.platform_data = &scu_lis3lv02d_data},
+#endif /* TESTING */
 	{ I2C_BOARD_INFO("pca9557", 0x1b),
 		.platform_data = &scu_pca953x_pdata[4],},
 };
