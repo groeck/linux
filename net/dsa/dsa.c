@@ -266,9 +266,12 @@ static int dsa_switch_setup_one(struct dsa_switch *ds, struct device *parent)
 	if (ret < 0)
 		goto out;
 
-	ret = drv->set_addr(ds, dst->master_netdev->dev_addr);
-	if (ret < 0)
-		goto out;
+	/* Don't configure MAC address in unmanaged mode */
+	if (!dsa_is_unmanaged(ds)) {
+		ret = drv->set_addr(ds, dst->master_netdev->dev_addr);
+		if (ret < 0)
+			goto out;
+	}
 
 	ds->slave_mii_bus = mdiobus_alloc();
 	if (ds->slave_mii_bus == NULL) {
@@ -350,9 +353,9 @@ dsa_switch_setup(struct dsa_switch_tree *dst, int index,
 			   index);
 		return ERR_PTR(-EINVAL);
 	}
-	netdev_info(dst->master_netdev, "[%d]: detected a %s switch\n",
-		    index, name);
-
+	netdev_info(dst->master_netdev, "[%d]: detected a%s %s switch\n",
+		    index,
+		    pd->flags & DSA_IS_UNMANAGED ? "n unmanaged" : "", name);
 
 	/*
 	 * Allocate and initialise switch state.

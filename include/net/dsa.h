@@ -64,7 +64,12 @@ struct dsa_chip_data {
 	 * NULL if there is only one switch chip.
 	 */
 	s8		*rtable;
+
+	u32		flags;		/* configuration flags */
 };
+
+/* Configuration flags */
+#define DSA_IS_UNMANAGED	(1 << 0)
 
 struct dsa_platform_data {
 	/*
@@ -174,6 +179,11 @@ static inline bool dsa_is_cpu_port(struct dsa_switch *ds, int p)
 static inline bool dsa_is_port_initialized(struct dsa_switch *ds, int p)
 {
 	return ds->phys_port_mask & (1 << p) && ds->ports[p];
+}
+
+static inline bool dsa_is_unmanaged(struct dsa_switch *ds)
+{
+	return ds->pd->flags & DSA_IS_UNMANAGED;
 }
 
 static inline u8 dsa_upstream_port(struct dsa_switch *ds)

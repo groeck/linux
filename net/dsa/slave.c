@@ -799,6 +799,20 @@ static int dsa_slave_get_eee(struct net_device *dev, struct ethtool_eee *e)
 	return ret;
 }
 
+static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	dev->stats.tx_dropped++;
+	kfree_skb(skb);
+	return NETDEV_TX_OK;
+}
+
+/* Minimal functionality in unmanaged mode */
+static const struct net_device_ops dummy_netdev_ops = {
+	.ndo_start_xmit		= dummy_xmit,
+	.ndo_do_ioctl		= dsa_slave_ioctl,
+	.ndo_get_iflink		= dsa_slave_get_iflink,
+};
+
 static const struct ethtool_ops dsa_slave_ethtool_ops = {
 	.get_settings		= dsa_slave_get_settings,
 	.set_settings		= dsa_slave_set_settings,
@@ -1027,7 +1041,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	if (slave_dev == NULL)
 		return -ENOMEM;
 
-	slave_dev->features = master->vlan_features | NETIF_F_VLAN_FEATURES;
+	slave_dev->features = master->vlan_features;
 	slave_dev->ethtool_ops = &dsa_slave_ethtool_ops;
 	eth_hw_addr_inherit(slave_dev, master);
 	slave_dev->tx_queue_len = 0;
@@ -1047,7 +1061,9 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	p->port = port;
 	p->nest_level = dsa_slave_master_nest_level(master) + 1;
 
-	switch (ds->dst->tag_protocol) {
+	if (dsa_is_unmanaged(ds))
+		slave_dev->netdev_ops = &dummy_netdev_ops;
+	else switch (ds->dst->tag_protocol) {
 #ifdef CONFIG_NET_DSA_TAG_DSA
 	case DSA_TAG_PROTO_DSA:
 		p->xmit = dsa_netdev_ops.xmit;
@@ -1072,6 +1088,10 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 		p->xmit	= dsa_slave_notag_xmit;
 		break;
 	}
+
+	if (!dsa_is_unmanaged(ds) &&
+	    ds->drv->port_vlan_add && ds->drv->port_vlan_del)
+		slave_dev->features |= NETIF_F_VLAN_FEATURES;
 
 	p->old_pause = -1;
 	p->old_link = -1;

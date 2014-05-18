@@ -153,6 +153,9 @@ static int mv88e6352_setup(struct dsa_switch *ds)
 
 	mutex_init(&ps->eeprom_mutex);
 
+	if (dsa_is_unmanaged(ds))
+		return 0;
+
 	ret = mv88e6xxx_switch_reset(ds, true);
 	if (ret < 0)
 		return ret;

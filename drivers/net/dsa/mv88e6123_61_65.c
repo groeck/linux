@@ -94,6 +94,9 @@ static int mv88e6123_61_65_setup(struct dsa_switch *ds)
 	if (ret < 0)
 		return ret;
 
+	if (dsa_is_unmanaged(ds))
+		return 0;
+
 	switch (ps->id) {
 	case PORT_SWITCH_ID_6123:
 		ps->num_ports = 3;
