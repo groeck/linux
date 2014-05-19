@@ -62,6 +62,19 @@ struct mv88e6xxx_priv_state {
 	unsigned long fid_flush_mask;
 
 	struct work_struct bridge_work;
+
+	/* sysfs attribute related information */
+	unsigned int	reg_addr;
+	unsigned int	reg_device;
+
+	unsigned int	phy_addr;
+	unsigned int	phy_page;
+	unsigned int	phy_device;
+
+	/* device specific statistics */
+	unsigned int idle_errors[DSA_MAX_PORTS];
+	unsigned int link_down_count[DSA_MAX_PORTS];
+	unsigned int receive_errors[DSA_MAX_PORTS];
 };
 
 struct mv88e6xxx_hw_stat {

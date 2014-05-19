@@ -14,6 +14,7 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/platform_device.h>
 #include <linux/phy.h>
 #include <net/dsa.h>
 #include "mv88e6xxx.h"
@@ -389,6 +390,8 @@ void mv88e6xxx_poll_link(struct dsa_switch *ds)
 
 		if (!link) {
 			if (netif_carrier_ok(dev)) {
+				struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+				ps->link_down_count[i]++;
 				netdev_info(dev, "link down\n");
 				netif_carrier_off(dev);
 			}
