@@ -371,6 +371,19 @@ struct mv88e6xxx_priv_state {
 	unsigned long fid_flush_mask;
 
 	struct work_struct bridge_work;
+
+	/* sysfs attribute related information */
+	unsigned int	reg_addr;
+	unsigned int	reg_device;
+
+	unsigned int	phy_addr;
+	unsigned int	phy_page;
+	unsigned int	phy_device;
+
+	/* device specific statistics */
+	unsigned int idle_errors[DSA_MAX_PORTS];
+	unsigned int link_down_count[DSA_MAX_PORTS];
+	unsigned int receive_errors[DSA_MAX_PORTS];
 };
 
 struct mv88e6xxx_hw_stat {
@@ -393,7 +406,10 @@ int mv88e6xxx_set_addr_indirect(struct dsa_switch *ds, u8 *addr);
 int mv88e6xxx_phy_read(struct dsa_switch *ds, int port, int regnum);
 int mv88e6xxx_phy_write(struct dsa_switch *ds, int port, int regnum, u16 val);
 int mv88e6xxx_phy_read_indirect(struct dsa_switch *ds, int port, int regnum);
+int _mv88e6xxx_phy_read_indirect(struct dsa_switch *ds, int port, int regnum);
 int mv88e6xxx_phy_write_indirect(struct dsa_switch *ds, int port, int regnum,
+				 u16 val);
+int _mv88e6xxx_phy_write_indirect(struct dsa_switch *ds, int port, int regnum,
 				 u16 val);
 void mv88e6xxx_ppu_state_init(struct dsa_switch *ds);
 int mv88e6xxx_phy_read_ppu(struct dsa_switch *ds, int addr, int regnum);

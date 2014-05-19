@@ -18,6 +18,7 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/platform_device.h>
 #include <linux/phy.h>
 #include <net/dsa.h>
 #include "mv88e6xxx.h"
@@ -413,6 +414,8 @@ void mv88e6xxx_poll_link(struct dsa_switch *ds)
 
 		if (!link) {
 			if (netif_carrier_ok(dev)) {
+				struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+				ps->link_down_count[i]++;
 				netdev_info(dev, "link down\n");
 				netif_carrier_off(dev);
 			}
@@ -894,8 +897,7 @@ static int _mv88e6xxx_atu_wait(struct dsa_switch *ds)
 }
 
 /* Must be called with SMI mutex held */
-static int _mv88e6xxx_phy_read_indirect(struct dsa_switch *ds, int addr,
-					int regnum)
+int _mv88e6xxx_phy_read_indirect(struct dsa_switch *ds, int addr, int regnum)
 {
 	int ret;
 
@@ -913,8 +915,8 @@ static int _mv88e6xxx_phy_read_indirect(struct dsa_switch *ds, int addr,
 }
 
 /* Must be called with SMI mutex held */
-static int _mv88e6xxx_phy_write_indirect(struct dsa_switch *ds, int addr,
-					 int regnum, u16 val)
+int _mv88e6xxx_phy_write_indirect(struct dsa_switch *ds, int addr,
+				  int regnum, u16 val)
 {
 	int ret;
 
