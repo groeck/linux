@@ -128,6 +128,9 @@ struct dsa_switch_tree {
 };
 
 struct dsa_switch {
+	struct device		*parent;	/* parent device */
+	const char		*name;		/* switch name/revision */
+
 	/*
 	 * Parent switch tree, and switch index.
 	 */
