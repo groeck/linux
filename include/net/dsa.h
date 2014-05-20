@@ -70,6 +70,7 @@ struct dsa_chip_data {
 
 /* Configuration flags */
 #define DSA_IS_UNMANAGED	(1 << 0)
+#define DSA_CREATE_CPU_IF	(1 << 1)
 
 struct dsa_platform_data {
 	/*
@@ -184,6 +185,11 @@ static inline bool dsa_is_port_initialized(struct dsa_switch *ds, int p)
 static inline bool dsa_is_unmanaged(struct dsa_switch *ds)
 {
 	return ds->pd->flags & DSA_IS_UNMANAGED;
+}
+
+static inline bool dsa_create_cpu_if(struct dsa_switch *ds)
+{
+	return ds->pd->flags & DSA_CREATE_CPU_IF;
 }
 
 static inline u8 dsa_upstream_port(struct dsa_switch *ds)

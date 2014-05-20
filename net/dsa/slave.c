@@ -806,7 +806,7 @@ static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
 	return NETDEV_TX_OK;
 }
 
-/* Minimal functionality in unmanaged mode */
+/* Minimal functionality in unmanaged mode and for cpu port */
 static const struct net_device_ops dummy_netdev_ops = {
 	.ndo_start_xmit		= dummy_xmit,
 	.ndo_do_ioctl		= dsa_slave_ioctl,
@@ -1061,7 +1061,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	p->port = port;
 	p->nest_level = dsa_slave_master_nest_level(master) + 1;
 
-	if (dsa_is_unmanaged(ds))
+	if (dsa_is_unmanaged(ds) || dsa_is_cpu_port(ds, port))
 		slave_dev->netdev_ops = &dummy_netdev_ops;
 	else switch (ds->dst->tag_protocol) {
 #ifdef CONFIG_NET_DSA_TAG_DSA
@@ -1089,7 +1089,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 		break;
 	}
 
-	if (!dsa_is_unmanaged(ds) &&
+	if (!dsa_is_unmanaged(ds) && !dsa_is_cpu_port(ds, port) &&
 	    ds->drv->port_vlan_add && ds->drv->port_vlan_del)
 		slave_dev->features |= NETIF_F_VLAN_FEATURES;
 
