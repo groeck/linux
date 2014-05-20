@@ -653,7 +653,7 @@ static netdev_tx_t dummy_xmit(struct sk_buff *skb, struct net_device *dev)
 	return NETDEV_TX_OK;
 }
 
-/* Minimal functionality in unmanaged mode */
+/* Minimal functionality in unmanaged mode and for cpu port */
 static const struct net_device_ops dummy_netdev_ops = {
 	.ndo_init		= dsa_slave_init,
 	.ndo_start_xmit		= dummy_xmit,
@@ -858,7 +858,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	p->parent = ds;
 	p->port = port;
 
-	if (dsa_is_unmanaged(ds))
+	if (dsa_is_unmanaged(ds) || dsa_is_cpu_port(ds, port))
 		slave_dev->netdev_ops = &dummy_netdev_ops;
 	else switch (ds->dst->tag_protocol) {
 #ifdef CONFIG_NET_DSA_TAG_DSA

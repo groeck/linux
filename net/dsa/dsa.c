@@ -289,7 +289,8 @@ static int dsa_switch_setup_one(struct dsa_switch *ds, struct device *parent)
 	 * Create network devices for physical switch ports.
 	 */
 	for (i = 0; i < DSA_MAX_PORTS; i++) {
-		if (!(ds->phys_port_mask & (1 << i)))
+		if (!(ds->phys_port_mask & (1 << i)) &&
+		    (i != dst->cpu_port || !dsa_create_cpu_if(ds)))
 			continue;
 
 		ret = dsa_slave_create(ds, parent, i, pd->port_names[i]);
