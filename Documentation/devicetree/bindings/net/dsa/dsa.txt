@@ -43,10 +43,20 @@ Each port children node must have the following mandatory properties:
 Note that a port labelled "dsa" will imply checking for the uplink phandle
 described below.
 
-Optionnal property:
+Optional properties:
 - link			: Should be a phandle to another switch's DSA port.
 			  This property is only used when switches are being
 			  chained/cascaded together.
+- unmanaged-switch	: Booloean property indicating that this switch is
+			  unmanaged. If unmanaged, switch parameters will not be
+			  changed during initialization, switch interfaces
+			  can not be used to send data, and are not expected to
+			  receive any data. Switch interfaces are created but
+			  only used to retrieve statistics data.
+- create-cpu-interface  : Boolean property indicating that a network interface
+			  should be created for the CPU port. This port can only
+			  be used to retrieve switch port statistics and not to
+			  send or receive data.
 
 - phy-handle		: Phandle to a PHY on an external MDIO bus, not the
 			  switch internal one. See

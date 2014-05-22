@@ -640,6 +640,11 @@ static int dsa_of_probe(struct device *dev)
 		if (!of_property_read_u32(child, "eeprom-length", &eeprom_len))
 			cd->eeprom_len = eeprom_len;
 
+		if (of_property_read_bool(child, "unmanaged-switch"))
+			cd->flags |= DSA_IS_UNMANAGED;
+		if (of_property_read_bool(child, "create-cpu-interface"))
+			cd->flags |= DSA_CREATE_CPU_IF;
+
 		for_each_available_child_of_node(child, port) {
 			port_reg = of_get_property(port, "reg", NULL);
 			if (!port_reg)
