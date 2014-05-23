@@ -843,12 +843,90 @@ static struct gpio_chip *scu_find_chip_by_name(const char *name)
 	return gpiochip_find((void *)name, scu_gpiochip_match_name);
 }
 
+static struct pca953x_platform_data scu_pca953x_pdata[] = {
+	[0] = {.gpio_base = SCU_EXT_GPIO_BASE(0),
+	       .irq_base = -1,
+	       .setup = pca9538_ext0_setup,
+	       .teardown = pca9538_ext0_teardown,
+	       .names = pca9538_ext0_gpio_names},
+	[1] = {.gpio_base = SCU_EXT_GPIO_BASE(1),
+	       .irq_base = -1,
+	       .setup = pca9538_ext1_setup,
+	       .teardown = pca9538_ext1_teardown,
+	       .names = pca9538_ext1_gpio_names},
+	[2] = {.gpio_base = SCU_EXT_GPIO_BASE(2),
+	       .irq_base = -1,
+	       .setup = pca9538_ext2_setup,
+	       .teardown = pca9538_ext2_teardown,
+	       .names = pca9538_ext2_gpio_names},
+	[3] = {.gpio_base = SCU_EXT_GPIO_BASE(3),
+	       .irq_base = -1,
+	       .setup = pca9538_ext3_setup,
+	       .teardown = pca9538_ext3_teardown,
+	       .names = pca9538_ext3_gpio_names},
+	[4] = {.gpio_base = SCU_EXT_GPIO_BASE(4),
+	       .irq_base = -1,
+	       .setup = pca9557_setup,
+	       .teardown = pca9557_teardown,
+	       .names = pca9557_gpio_names},
+};
+
+#ifdef TESTING	/* removed from design */
+
+static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
+	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
+	    LIS3_CLICK_SINGLE_Z,
+	/* Limits are 0.5g * value */
+	.click_thresh_x = 8,
+	.click_thresh_y = 8,
+	.click_thresh_z = 10,
+	/* Click must be longer than time limit */
+	.click_time_limit = 9,
+	/* Kind of debounce filter */
+	.click_latency = 50,
+
+	/* Limits for all axis. millig-value / 18 to get HW values */
+	.wakeup_flags = LIS3_WAKEUP_X_HI | LIS3_WAKEUP_Y_HI,
+	.wakeup_thresh = 800 / 18,
+	.wakeup_flags2 = LIS3_WAKEUP_Z_HI,
+	.wakeup_thresh2 = 900 / 18,
+
+	.hipass_ctrl = LIS3_HIPASS1_DISABLE | LIS3_HIPASS2_DISABLE,
+
+	.axis_x = LIS3_DEV_X,
+	.axis_y = LIS3_INV_DEV_Y,
+	.axis_z = LIS3_INV_DEV_Z,
+	.st_min_limits = {-32, 3, 3},
+	.st_max_limits = {-3, 32, 32},
+};
+#endif /* TESTING */
+
+static struct i2c_board_info scu_i2c_info_scu3[] = {
+	{ I2C_BOARD_INFO("pca9538", 0x70),
+		.platform_data = &scu_pca953x_pdata[0],},
+	{ I2C_BOARD_INFO("pca9557", 0x1b),
+		.platform_data = &scu_pca953x_pdata[4],},
+#ifdef TESTING  /* removed from design */
+	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
+		.platform_data = &scu_lis3lv02d_data},
+#endif /* TESTING */
+};
+
 static void pch_gpio_setup(struct scu_data *data)
 {
 	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
 	struct mdio_gpio_platform_data mdio_pdata = { };
 
+	scu_pca953x_pdata[0].irq_base = -1;
+	scu_i2c_info_scu3[0].irq = 0;
 	if (chip) {
+		int irq = gpio_to_irq(chip->base + 1);	/* GPI1 */
+
+		if (irq > 0) {
+			scu_pca953x_pdata[0].irq_base = 0;
+			scu_i2c_info_scu3[0].irq = irq;
+		}
+
 		mdio_pdata.mdc = chip->base + 17;	/* GPO1 */
 		mdio_pdata.mdo = chip->base + 21;	/* GPO2 */
 		mdio_pdata.mdo_active_low = true;
@@ -862,8 +940,8 @@ static void pch_gpio_setup(struct scu_data *data)
 			dev_err(data->dev, "Failed to register MDIO device\n");
 			data->mdio_dev = NULL;
 		}
-		/* generic: 0-1, 3 (input), 16, 20 (output) */
-		scu_gpio_common_setup(chip->base, 22, 0x11000b, 0x00000b, 0x0,
+		/* generic: 0, 3 (input), 16, 20 (output) */
+		scu_gpio_common_setup(chip->base, 22, 0x110009, 0x00000b, 0x0,
 				      0x0);
 	}
 }
@@ -920,75 +998,10 @@ static void scu3_remove(struct scu_data *data)
 	platform_device_unregister(data->dsa_dev);
 }
 
-static struct pca953x_platform_data scu_pca953x_pdata[] = {
-	[0] = {.gpio_base = SCU_EXT_GPIO_BASE(0),
-	       .irq_base = -1,
-	       .setup = pca9538_ext0_setup,
-	       .teardown = pca9538_ext0_teardown,
-	       .names = pca9538_ext0_gpio_names},
-	[1] = {.gpio_base = SCU_EXT_GPIO_BASE(1),
-	       .irq_base = -1,
-	       .setup = pca9538_ext1_setup,
-	       .teardown = pca9538_ext1_teardown,
-	       .names = pca9538_ext1_gpio_names},
-	[2] = {.gpio_base = SCU_EXT_GPIO_BASE(2),
-	       .irq_base = -1,
-	       .setup = pca9538_ext2_setup,
-	       .teardown = pca9538_ext2_teardown,
-	       .names = pca9538_ext2_gpio_names},
-	[3] = {.gpio_base = SCU_EXT_GPIO_BASE(3),
-	       .irq_base = -1,
-	       .setup = pca9538_ext3_setup,
-	       .teardown = pca9538_ext3_teardown,
-	       .names = pca9538_ext3_gpio_names},
-	[4] = {.gpio_base = SCU_EXT_GPIO_BASE(4),
-	       .irq_base = -1,
-	       .setup = pca9557_setup,
-	       .teardown = pca9557_teardown,
-	       .names = pca9557_gpio_names},
-};
-
 static struct i2c_board_info scu_i2c_info_scu2[] = {
 	{ I2C_BOARD_INFO("sc18is602", 0x28)},
-};
-
-#ifdef TESTING	/* removed from design */
-
-static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
-	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
-	    LIS3_CLICK_SINGLE_Z,
-	/* Limits are 0.5g * value */
-	.click_thresh_x = 8,
-	.click_thresh_y = 8,
-	.click_thresh_z = 10,
-	/* Click must be longer than time limit */
-	.click_time_limit = 9,
-	/* Kind of debounce filter */
-	.click_latency = 50,
-
-	/* Limits for all axis. millig-value / 18 to get HW values */
-	.wakeup_flags = LIS3_WAKEUP_X_HI | LIS3_WAKEUP_Y_HI,
-	.wakeup_thresh = 800 / 18,
-	.wakeup_flags2 = LIS3_WAKEUP_Z_HI,
-	.wakeup_thresh2 = 900 / 18,
-
-	.hipass_ctrl = LIS3_HIPASS1_DISABLE | LIS3_HIPASS2_DISABLE,
-
-	.axis_x = LIS3_DEV_X,
-	.axis_y = LIS3_INV_DEV_Y,
-	.axis_z = LIS3_INV_DEV_Z,
-	.st_min_limits = {-32, 3, 3},
-	.st_max_limits = {-3, 32, 32},
-};
-#endif /* TESTING */
-
-static struct i2c_board_info scu_i2c_info_scu3[] = {
-#ifdef TESTING  /* removed from design */
-	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
-		.platform_data = &scu_lis3lv02d_data},
-#endif /* TESTING */
-	{ I2C_BOARD_INFO("pca9557", 0x1b),
-		.platform_data = &scu_pca953x_pdata[4],},
+	{ I2C_BOARD_INFO("pca9538", 0x70),
+		.platform_data = &scu_pca953x_pdata[0],},
 };
 
 static struct spi_board_info scu_spi_info[] = {
@@ -1133,9 +1146,13 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 
 	/*
 	 * We know as much as we will ever find out about the platform.
-	 * Instantiate additional I2C devices as well as SPI devices now,
-	 * prior to validating the EEPROM checksum.
+	 * Perform final platform initialization and instantiate additional
+	 * I2C devices as well as SPI devices now, prior to validating
+	 * the EEPROM checksum.
 	 */
+	if (pdata->init)
+		pdata->init(data);
+
 	if (pdata->i2c_board_info)
 		scu_instantiate_i2c(data, 7, pdata->i2c_board_info,
 				    pdata->num_i2c_board_info);
@@ -1143,9 +1160,6 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	if (pdata->spi_board_info)
 		scu_instantiate_spi(data, pdata->spi_board_info,
 				    pdata->num_spi_board_info);
-
-	if (pdata->init)
-		pdata->init(data);
 
 	len = data->pdata->eeprom_len;
 
@@ -1182,8 +1196,6 @@ static struct i2c_board_info scu_i2c_info_common[] = {
 	{ I2C_BOARD_INFO("at24", 0x54),
 		.platform_data = &at24c08},
 	{ I2C_BOARD_INFO("ds1682", 0x6b)},
-	{ I2C_BOARD_INFO("pca9538", 0x70),
-		.platform_data = &scu_pca953x_pdata[0],},
 	{ I2C_BOARD_INFO("pca9538", 0x71),
 		.platform_data = &scu_pca953x_pdata[1],},
 	{ I2C_BOARD_INFO("pca9538", 0x72),
