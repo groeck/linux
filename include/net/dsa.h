@@ -13,6 +13,7 @@
 
 #include <linux/if_ether.h>
 #include <linux/list.h>
+#include <linux/sysfs.h>
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/of.h>
@@ -322,6 +323,10 @@ struct dsa_switch_driver {
 	int	(*fdb_getnext)(struct dsa_switch *ds, int port,
 			       unsigned char *addr);
 	void	(*port_flush)(struct dsa_switch *ds, int port);
+
+	/* sysfs attribute group */
+
+	const struct attribute_group *sysfs_group;
 };
 
 void register_switch_driver(struct dsa_switch_driver *type);
