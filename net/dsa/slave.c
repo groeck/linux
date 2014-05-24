@@ -1103,6 +1103,8 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 		return ret;
 	}
 
+	slave_dev->sysfs_groups[0] = ds->drv->sysfs_group;
+
 	ds->ports[port] = slave_dev;
 	ret = register_netdev(slave_dev);
 	if (ret) {
