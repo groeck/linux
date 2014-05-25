@@ -389,6 +389,38 @@ static ssize_t phy_data_store(struct device *dev, struct device_attribute *attr,
 
 static DEVICE_ATTR_RW(phy_data);
 
+static ssize_t reset_counters_store(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t count)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct dsa_switch_tree *dst = platform_get_drvdata(pdev);
+	struct dsa_switch *ds = dst->ds[0];
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int ret, i;
+
+	ret = mv88e6xxx_reset_stats(ds);
+	if (ret < 0)
+		return ret;
+
+	for (i = 0; i < DSA_MAX_PORTS; i++) {
+
+		ps->receive_errors[i] = 0;
+		ps->idle_errors[i] = 0;
+		ps->link_down_count[i] = 0;
+		ps->receive_errors[i] = 0;
+
+		REG_WRITE(REG_PORT(i), 0x10, 0x0000);
+		REG_WRITE(REG_PORT(i), 0x11, 0x0000);
+		REG_WRITE(REG_PORT(i), 0x12, 0x0000);
+		REG_WRITE(REG_PORT(i), 0x13, 0x0000);
+	}
+
+	return count;
+}
+
+static DEVICE_ATTR_WO(reset_counters);
+
 /* Switch type and revision */
 
 static ssize_t revision_show(struct device *dev, struct device_attribute *attr,
@@ -411,6 +443,7 @@ static struct attribute *mv88e6352_attributes[] = {
 	&dev_attr_phy_page.attr,
 	&dev_attr_phy_addr.attr,
 	&dev_attr_phy_data.attr,
+	&dev_attr_reset_counters.attr,
 	&dev_attr_revision.attr,
 	NULL
 };

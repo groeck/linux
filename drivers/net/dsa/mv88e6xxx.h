@@ -450,6 +450,8 @@ int mv88e6xxx_phy_page_write(struct dsa_switch *ds, int port, int page,
 int mv88e6xxx_port_vlan_add(struct dsa_switch *ds, int port, u16 vid,
 			    u16 bridge_flags);
 int mv88e6xxx_port_vlan_del(struct dsa_switch *ds,int port, u16 vid);
+int mv88e6xxx_reset_stats(struct dsa_switch *ds);
+
 extern struct dsa_switch_driver mv88e6131_switch_driver;
 extern struct dsa_switch_driver mv88e6123_61_65_switch_driver;
 extern struct dsa_switch_driver mv88e6352_switch_driver;
