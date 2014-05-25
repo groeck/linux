@@ -1166,6 +1166,27 @@ int mv88e6xxx_setup_common(struct dsa_switch *ds)
 	return 0;
 }
 
+static int __mv88e6xxx_reset_stats(struct dsa_switch *ds)
+{
+	/* Clear all counters for all ports. */
+	REG_WRITE(REG_GLOBAL, 0x1d, 0x9c00);
+
+	/* Wait for the clearing to complete. */
+	return mv88e6xxx_stats_wait(ds);
+}
+
+int mv88e6xxx_reset_stats(struct dsa_switch *ds)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int ret;
+
+	mutex_lock(&ps->stats_mutex);
+	ret = __mv88e6xxx_reset_stats(ds);
+	mutex_unlock(&ps->stats_mutex);
+
+	return ret;
+}
+
 static int __init mv88e6xxx_init(void)
 {
 #if IS_ENABLED(CONFIG_NET_DSA_MV88E6131)

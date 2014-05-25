@@ -131,6 +131,8 @@ int mv88e6xxx_port_fdb_del(struct dsa_switch *ds, int port,
 int mv88e6xxx_port_fdb_getnext(struct dsa_switch *ds, int port,
 			       unsigned char *addr);
 
+int mv88e6xxx_reset_stats(struct dsa_switch *ds);
+
 extern struct dsa_switch_driver mv88e6131_switch_driver;
 extern struct dsa_switch_driver mv88e6123_61_65_switch_driver;
 extern struct dsa_switch_driver mv88e6352_switch_driver;
