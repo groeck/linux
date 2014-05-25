@@ -20,6 +20,20 @@
 #include <linux/if_bridge.h>
 #include "dsa_priv.h"
 
+struct dsa_switch *dsa_slave_switch(struct net_device *dev)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+
+	return p->parent;
+}
+
+int dsa_slave_port(struct net_device *dev)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+
+	return p->port;
+}
+
 /* slave mii_bus handling ***************************************************/
 static int dsa_slave_phy_read(struct mii_bus *bus, int addr, int reg)
 {

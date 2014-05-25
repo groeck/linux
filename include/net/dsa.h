@@ -350,4 +350,8 @@ static inline bool dsa_uses_tagged_protocol(struct dsa_switch_tree *dst)
 {
 	return dst->rcv != NULL;
 }
+
+struct dsa_switch *dsa_slave_switch(struct net_device *dev);
+int dsa_slave_port(struct net_device *dev);
+
 #endif
