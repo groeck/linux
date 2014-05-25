@@ -768,11 +768,85 @@ static ssize_t link_down_count_show(struct device *dev,
 
 static DEVICE_ATTR_RO(link_down_count);
 
+static ssize_t packet_generator_count_show(struct device *dev,
+					   struct device_attribute *attr,
+					   char *buf)
+{
+	struct dsa_switch *ds = dsa_slave_switch(to_net_dev(dev));
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+
+	return sprintf(buf, "%x\n", ps->packet_generator_count);
+}
+
+static ssize_t packet_generator_count_store(struct device *dev,
+					    struct device_attribute *attr,
+					    const char *buf, size_t count)
+{
+	struct dsa_switch *ds = dsa_slave_switch(to_net_dev(dev));
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	ps->packet_generator_count = clamp_val(val, 1, 255);
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(packet_generator_count);
+
+static ssize_t packet_generator_show(struct device *dev,
+				     struct device_attribute *attr, char *buf)
+{
+	struct dsa_switch *ds = dsa_slave_switch(to_net_dev(dev));
+	int port = dsa_slave_port(to_net_dev(dev));
+	int ret;
+
+	ret = mv88e6xxx_phy_page_read(ds, port, 0x06, 0x10);
+	if (ret < 0)
+		return ret;
+
+	return sprintf(buf, "%4x\n", ret);
+}
+
+static ssize_t packet_generator_store(struct device *dev,
+				      struct device_attribute *attr,
+				      const char *buf, size_t count)
+{
+	struct dsa_switch *ds = dsa_slave_switch(to_net_dev(dev));
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int port = dsa_slave_port(to_net_dev(dev));
+	int pcount = clamp_val(ps->packet_generator_count, 1, 255);
+	unsigned int val;
+	int ret;
+
+	ret = kstrtouint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	if (val != 0 && val != 1)
+		return -EINVAL;
+
+	ret = mv88e6xxx_phy_page_write(ds, port, 0x06, 0x10,
+				       (pcount << 8) | (val << 3) | 0x06);
+	if (ret < 0)
+		return ret;
+
+	return count;
+}
+
+static DEVICE_ATTR_RW(packet_generator);
+
 static struct attribute *mv88e6352_port_attrs[] = {
 	&dev_attr_idle_errors.attr,
 	&dev_attr_receive_errors.attr,
 	&dev_attr_cable_length.attr,
 	&dev_attr_link_down_count.attr,
+	&dev_attr_packet_generator_count.attr,
+	&dev_attr_packet_generator.attr,
 	NULL
 };
 

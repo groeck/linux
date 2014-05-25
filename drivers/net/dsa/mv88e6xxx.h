@@ -380,7 +380,9 @@ struct mv88e6xxx_priv_state {
 	unsigned int	phy_page;
 	unsigned int	phy_device;
 
-	/* device specific statistics */
+	int packet_generator_count;
+
+	/* statistics */
 	unsigned int idle_errors[DSA_MAX_PORTS];
 	unsigned int link_down_count[DSA_MAX_PORTS];
 	unsigned int receive_errors[DSA_MAX_PORTS];
