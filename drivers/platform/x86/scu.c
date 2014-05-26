@@ -885,7 +885,8 @@ static struct dsa_chip_data switch_chip_data = {
         .port_names[3]	= "netright",
         .port_names[4]	= "netleft",
         .port_names[5]	= 0,	/* unused */
-	.flags		= DSA_IS_UNMANAGED | DSA_CREATE_CPU_IF,
+	.flags		= DSA_CREATE_CPU_IF,
+	// .flags		= DSA_IS_UNMANAGED | DSA_CREATE_CPU_IF,
 };
 
 static void scu_setup_ethernet_switch(struct scu_data *data)
