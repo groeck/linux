@@ -95,7 +95,7 @@ struct __packed eeprom_data {
 	unsigned char dummy[21];/* 75 - 95 spare/filler */
 };
 
-enum scu_version { scu1, scu2, scu3 };
+enum scu_version { scu1, scu2, scu3, unknown };
 
 struct scu_data;
 
@@ -1019,6 +1019,15 @@ static struct scu_platform_data scu_platform_data[] = {
 		.init = scu3_init,
 		.remove = scu3_remove,
 	},
+	[unknown] = {
+		.board_type = "UNKNOWN",
+		.version = unknown,
+		.eeprom_len = SCU_EEPROM_LEN_GEN3,
+		.i2c_board_info = scu_i2c_info_scu3,
+		.num_i2c_board_info = ARRAY_SIZE(scu_i2c_info_scu3),
+		.init = scu3_init,
+		.remove = scu3_remove,
+	},
 };
 
 static int scu_instantiate_i2c(struct scu_data *data, int base,
@@ -1090,6 +1099,15 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	/* EEPROM is accessible, permit write access to it */
 	data->eeprom_accessible = true;
 
+	/* Special case - eeprom not programmed */
+	if (data->eeprom.length == 0xffff && data->eeprom.checksum == 0xff) {
+		/* Assume it is SCU3, but report different board type */
+		data->pdata = &scu_platform_data[unknown];
+		memset(&data->eeprom, '\0', sizeof(data->eeprom));
+		data->eeprom.length = cpu_to_le16(SCU_EEPROM_LEN_EEPROM);
+		goto unprogrammed;
+	}
+
 	/* Sanity check */
 	if (le16_to_cpu(data->eeprom.length) != SCU_EEPROM_LEN_EEPROM) {
 		dev_err(data->dev,
@@ -1108,8 +1126,9 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 			break;
 		}
 	}
-	pdata = data->pdata;
 
+unprogrammed:
+	pdata = data->pdata;
 	/*
 	 * We know as much as we will ever find out about the platform.
 	 * Perform final platform initialization and instantiate additional
