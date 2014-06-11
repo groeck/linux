@@ -712,12 +712,12 @@ static const char *pca9538_ext3_gpio_names[8] = {
 };
 
 static const char *pca9557_gpio_names[8] = {
-	"pca9557:port1_cd",
-	"pca9557:port2_cd",
-	"pca9557:port3_cd",
-	"pca9557:port4_cd",
-	"pca9557:port5_cd",
-	"pca9557:port6_cd",
+	"pca9557:sd_card_detect_1",
+	"pca9557:sd_card_detect_2",
+	"pca9557:sd_card_detect_3",
+	"pca9557:sd_card_detect_4",
+	"pca9557:sd_card_detect_5",
+	"pca9557:sd_card_detect_6",
 	"pca9557:spare1",
 	"pca9557:spare2",
 };
@@ -871,45 +871,11 @@ static struct pca953x_platform_data scu_pca953x_pdata[] = {
 	       .names = pca9557_gpio_names},
 };
 
-#ifdef TESTING	/* removed from design */
-
-static struct lis3lv02d_platform_data scu_lis3lv02d_data = {
-	.click_flags = LIS3_CLICK_SINGLE_X | LIS3_CLICK_SINGLE_Y |
-	    LIS3_CLICK_SINGLE_Z,
-	/* Limits are 0.5g * value */
-	.click_thresh_x = 8,
-	.click_thresh_y = 8,
-	.click_thresh_z = 10,
-	/* Click must be longer than time limit */
-	.click_time_limit = 9,
-	/* Kind of debounce filter */
-	.click_latency = 50,
-
-	/* Limits for all axis. millig-value / 18 to get HW values */
-	.wakeup_flags = LIS3_WAKEUP_X_HI | LIS3_WAKEUP_Y_HI,
-	.wakeup_thresh = 800 / 18,
-	.wakeup_flags2 = LIS3_WAKEUP_Z_HI,
-	.wakeup_thresh2 = 900 / 18,
-
-	.hipass_ctrl = LIS3_HIPASS1_DISABLE | LIS3_HIPASS2_DISABLE,
-
-	.axis_x = LIS3_DEV_X,
-	.axis_y = LIS3_INV_DEV_Y,
-	.axis_z = LIS3_INV_DEV_Z,
-	.st_min_limits = {-32, 3, 3},
-	.st_max_limits = {-3, 32, 32},
-};
-#endif /* TESTING */
-
 static struct i2c_board_info scu_i2c_info_scu3[] = {
 	{ I2C_BOARD_INFO("pca9538", 0x70),
 		.platform_data = &scu_pca953x_pdata[0],},
 	{ I2C_BOARD_INFO("pca9557", 0x1b),
 		.platform_data = &scu_pca953x_pdata[4],},
-#ifdef TESTING  /* removed from design */
-	{ I2C_BOARD_INFO("lis3lv02d", 0x18),
-		.platform_data = &scu_lis3lv02d_data},
-#endif /* TESTING */
 };
 
 static void pch_gpio_setup(struct scu_data *data)
@@ -958,10 +924,10 @@ static void pch_gpio_teardown(struct scu_data *data)
 
 static struct dsa_chip_data switch_chip_data = {
         .port_names[0]	= "cpu",
-        .port_names[1]	= "netaux",
-        .port_names[2]	= 0,	/* unused */
-        .port_names[3]	= "netright",
-        .port_names[4]	= "netleft",
+        .port_names[1]	= "port1",
+        .port_names[2]	= "port2",
+        .port_names[3]	= "port3",
+        .port_names[4]	= "host2esb",
         .port_names[5]	= 0,	/* unused */
 	.flags		= DSA_CREATE_CPU_IF,
 	// .flags		= DSA_IS_UNMANAGED | DSA_CREATE_CPU_IF,
