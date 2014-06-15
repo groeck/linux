@@ -878,6 +878,14 @@ static struct i2c_board_info scu_i2c_info_scu3[] = {
 		.platform_data = &scu_pca953x_pdata[4],},
 };
 
+/* SCU specific gpio pin names. Only works if module is built into kernel. */
+static const char * const scu_ichx_gpiolib_names[128] = {
+	[3] = "ac_loss_detect",	/* GPI3 */
+	[16] = "debug_out",	/* GPO0 */
+};
+
+const char * const (* const ichx_gpiolib_names)[] = &scu_ichx_gpiolib_names;
+
 static void pch_gpio_setup(struct scu_data *data)
 {
 	struct gpio_chip *chip = scu_find_chip_by_name("gpio_ich");
