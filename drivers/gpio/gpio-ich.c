@@ -337,7 +337,7 @@ static void ichx_gpio_irqpoll(struct work_struct *work)
 			     && (oldval & bit) && !(val & bit))) {
 				unsigned int irq;
 				irq = irq_find_mapping(ichx_priv.domain, gpio);
-				if (irq >= 0)
+				if (irq)
 					generic_handle_irq(irq);
 			}
 			enabled &= ~bit;
