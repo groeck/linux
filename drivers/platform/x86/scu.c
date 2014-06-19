@@ -41,6 +41,7 @@
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/netdevice.h>
+#include <linux/rtnetlink.h>
 #include <net/dsa.h>
 #include <asm/processor.h>
 #include <asm/byteorder.h>
@@ -1285,6 +1286,7 @@ static int scu_probe(struct platform_device *pdev)
 	struct proc_dir_entry *rave_board_type;
 	struct device *dev = &pdev->dev;
 	struct i2c_adapter *adapter;
+	struct net_device *ndev;
 	struct scu_data *data;
 	int i, ret;
 
@@ -1303,7 +1305,17 @@ static int scu_probe(struct platform_device *pdev)
 
 	mutex_init(&data->write_lock);
 
-	data->netdev = dev_get_by_name(&init_net, "eth0");
+	/* look for ethernet device attached to 'e1000e' driver */
+	rtnl_lock();
+	for_each_netdev(&init_net, ndev) {
+		if (ndev->dev.parent && ndev->dev.parent->driver &&
+		    !strcmp(ndev->dev.parent->driver->name, "e1000e")) {
+			data->netdev = ndev;
+			break;
+		}
+	}
+	rtnl_unlock();
+
 	if (!data->netdev)
 		return -EPROBE_DEFER;
 
