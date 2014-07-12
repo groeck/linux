@@ -134,14 +134,18 @@ static int scu_pic_read_value(struct i2c_client *client, u8 reg)
 
 	ret = scu_pic_xfer(client->adapter, client->addr, client->flags, true,
 		       reg, &data);
-	if (ret)
+	if (ret) {
+		dev_dbg(&client->dev, "Read 0x%02x error %d\n", reg, ret);
 		return ret;
+	}
+	dev_dbg(&client->dev, "Read 0x%02x = 0x%02x\n", reg, data);
 	return data;
 }
 
 static int
 scu_pic_write_value(struct i2c_client *client, u8 reg, u8 value)
 {
+	dev_dbg(&client->dev, "Write 0x%02x := 0x%02x\n", reg, value);
 	return scu_pic_xfer(client->adapter, client->addr, client->flags, false,
 			reg, &value);
 }
