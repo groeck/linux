@@ -505,6 +505,56 @@ static struct attribute_group scu_eeprom_group = {
 	.is_visible = scu_attr_is_visible,
 };
 
+#define SCU_EEPROM_BIN_SIZE	32
+
+static ssize_t scu_eeprom_bin_read(struct file *filp, struct kobject *kobj,
+				   struct bin_attribute *attr, char *buf,
+				   loff_t off, size_t count)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	if (count == 0)
+		return 0;
+
+	if (off >= attr->size)
+		return -EFBIG;
+
+	if (off + count >= SCU_EEPROM_BIN_SIZE)
+		count = SCU_EEPROM_BIN_SIZE - off;
+
+	return data->macc->read(data->macc, buf, off, count);
+}
+
+static ssize_t scu_eeprom_bin_write(struct file *filp, struct kobject *kobj,
+				    struct bin_attribute *attr, char *buf,
+				    loff_t off, size_t count)
+{
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	if (count == 0)
+		return 0;
+
+	if (off >= attr->size)
+		return -EFBIG;
+
+	if (off + count >= SCU_EEPROM_BIN_SIZE)
+		count = SCU_EEPROM_BIN_SIZE - off;
+
+	return data->macc->write(data->macc, buf, off, count);
+}
+
+static struct bin_attribute scu_eeprom_file = {
+	.attr = {
+		.name = "eeprom",
+		.mode = S_IRUGO | S_IWUSR,
+	},
+	.size = SCU_EEPROM_BIN_SIZE,
+	.read = scu_eeprom_bin_read,
+	.write = scu_eeprom_bin_write,
+};
+
 /* platform data */
 
 static struct gpio_led pca_gpio_leds1[] = {
@@ -1176,7 +1226,10 @@ error:
 error_noclean:
 	data->eeprom_valid = false;
 done:
-	sysfs_create_group(&data->dev->kobj, &scu_eeprom_group);
+	if (sysfs_create_group(&data->dev->kobj, &scu_eeprom_group))
+		;
+	if (sysfs_create_bin_file(&data->dev->kobj, &scu_eeprom_file))
+		;
 }
 
 static struct at24_platform_data at24c08 = {
@@ -1376,6 +1429,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 	struct scu_data *data = platform_get_drvdata(pdev);
 	int i;
 
+	sysfs_remove_bin_file(&data->dev->kobj, &scu_eeprom_file);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
