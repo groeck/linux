@@ -615,7 +615,7 @@ static ssize_t scu_eeprom_bin_write(struct file *filp, struct kobject *kobj,
 
 static struct bin_attribute scu_eeprom_file = {
 	.attr = {
-		.name = "eeprom",
+		.name = "eeprom_scratchpad",
 		.mode = S_IRUGO | S_IWUSR,
 	},
 	.size = SCU_EEPROM_BIN_SIZE,
