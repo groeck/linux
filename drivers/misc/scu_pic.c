@@ -49,6 +49,8 @@ struct scu_pic_data {
 	u8 version_major;
 	u8 version_minor;
 	u8 reset_reason;
+	u8 fan_contr_model;
+	u8 fan_contr_rev;
 
 	bool valid;			/* true if following fields are valid */
 	unsigned long last_updated;	/* In jiffies */
@@ -66,8 +68,6 @@ struct scu_pic_data {
 	/* led data */
 	struct led_classdev cdev;
 };
-
-#define to_scu_pic_data_miscdev(d) container_of(d, struct scu_pic_data, wdt_miscdev)
 
 /*
  * Global data pointer list with all scu_pic devices, so that we can find
@@ -88,9 +88,6 @@ static void scu_pic_release_resources(struct kref *ref)
 #define WDT_EXPECT_CLOSE		1
 
 #define TEMP_FROM_REG(val)		((val) * 1000)
-
-#define FAN_FROM_REG(reg, div)		((reg) && (reg) != 0xff ? \
-					 (11250 * 60) / ((reg) * (div)) : 0)
 
 #define SCU_PIC_WDT_TIMEOUT	300		/* 5 minutes */
 
@@ -152,13 +149,13 @@ scu_pic_write_value(struct i2c_client *client, u8 reg, u8 value)
 
 /* hardware monitoring */
 
-static struct scu_pic_data * get_reset_reason(struct device *dev) 
+static struct scu_pic_data *get_reset_reason(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
 	struct scu_pic_data *data = i2c_get_clientdata(client);
 	/*
 	 * Get the reset reason from the PIC
-     */
+	 */
 	data->reset_reason = scu_pic_read_value(client, I2C_GET_SCU_PIC_RESET_REASON);
 
 	return data;
@@ -283,14 +280,36 @@ static DEVICE_ATTR(pwm1_enable, S_IRUGO | S_IWUSR, show_pwm_enable,
 static DEVICE_ATTR(pwm2_enable, S_IRUGO | S_IWUSR, show_pwm_enable,
 		   set_pwm_enable);
 
+static int fan_from_reg(struct scu_pic_data *data, u8 reg)
+{
+	int speed = 0;
+	int mult;
+
+	if (reg == 0 || reg == 0xff)
+		return 0;
+
+	switch (data->fan_contr_model) {
+	case 0:
+	case FAN_CONTR_MODEL_ADM1031:
+		mult = data->pwm_state == 2 ? 30 : 60;
+		speed = DIV_ROUND_CLOSEST(11250 * mult, reg);
+		break;
+	case FAN_CONTR_MODEL_MAX6639:
+		speed = DIV_ROUND_CLOSEST(8000 * 30, reg);
+		break;
+	default:
+		break;
+	}
+	return speed;
+}
+
 static ssize_t show_fan(struct device *dev,
 			struct device_attribute *attr, char *buf)
 {
 	int nr = to_sensor_dev_attr(attr)->index;
 	struct scu_pic_data *data = scu_pic_update_device(dev);
-	int div = data->pwm_state == 2 ? 2 : 1;
 
-	return sprintf(buf, "%d\n", FAN_FROM_REG(data->fan[nr], div));
+	return sprintf(buf, "%d\n", fan_from_reg(data, data->fan[nr]));
 }
 
 static ssize_t show_fan_div(struct device *dev,
@@ -624,6 +643,7 @@ static int scu_pic_probe(struct i2c_client *client,
 	struct scu_pic_data *data;
 	int err;
 	int major, minor;
+	int model, rev;
 
 	major = scu_pic_read_value(client, I2C_GET_SCU_PIC_FIRMWARE_REV_MAJOR);
 	minor = scu_pic_read_value(client, I2C_GET_SCU_PIC_FIRMWARE_REV_MINOR);
@@ -648,6 +668,26 @@ static int scu_pic_probe(struct i2c_client *client,
 
 	data->version_major = major;
 	data->version_minor = minor;
+	if (data->version_major >= 6) {
+		model = scu_pic_read_value(client,
+					   I2C_GET_SCU_PIC_FAN_CONTR_MODEL);
+		if (model < 0 || model == 0xff) {
+			dev_err(dev,
+				"Failed to read fan controller model (%d)\n",
+				model);
+			model = 0;
+		}
+		rev = scu_pic_read_value(client,
+					 I2C_GET_SCU_PIC_FAN_CONTR_REV);
+		if (rev < 0 || rev == 0xff) {
+			dev_err(dev,
+				"Failed to read fan controller revision (%d)\n",
+				rev);
+			rev = 0;
+		}
+		data->fan_contr_model = model;
+		data->fan_contr_rev = rev;
+	}
 
 	mutex_init(&data->i2c_lock);
 	kref_init(&data->kref);
@@ -670,7 +710,9 @@ static int scu_pic_probe(struct i2c_client *client,
 		goto exit_led;
 	}
 
-	dev_info(dev, "SCU PIC Firmware revision %d.%d\n", major, minor);
+	dev_info(dev,
+		 "SCU PIC Firmware revision %d.%d Fan controller model 0x%02x revision 0x%02x\n",
+		 major, minor, data->fan_contr_model, data->fan_contr_rev);
 
 	return 0;
 
