@@ -106,7 +106,7 @@ struct scu_data;
 
 struct scu_platform_data {
 	const char *board_type;
-	const char *part_number;
+	const char *lru_part_number;
 	enum scu_version version;
 	int eeprom_len;
 	struct i2c_board_info *i2c_board_info;
@@ -142,9 +142,9 @@ struct scu_data {
 #define SCU_EEPROM_LEN_GEN2	75
 #define SCU_EEPROM_LEN_GEN3	75		/* Preliminary */
 
-#define SCU_PARTNUM_GEN1	"00-5001"
-#define SCU_PARTNUM_GEN2	"00-5010"
-#define SCU_PARTNUM_GEN3	"00-5013"
+#define SCU_LRU_PARTNUM_GEN1	"00-5001"
+#define SCU_LRU_PARTNUM_GEN2	"00-5010"
+#define SCU_LRU_PARTNUM_GEN3	"00-5013"
 
 #define SCU_WRITE_MAGIC		5482328594ULL
 
@@ -1118,7 +1118,7 @@ static struct spi_board_info scu_spi_info[] = {
 static struct scu_platform_data scu_platform_data[] = {
 	[scu1] = {
 		.board_type = "SCU1 x86",
-		.part_number = SCU_PARTNUM_GEN1,
+		.lru_part_number = SCU_LRU_PARTNUM_GEN1,
 		.version = scu1,
 		.eeprom_len = SCU_EEPROM_LEN_GEN1,
 		.i2c_board_info = scu_i2c_info_scu2,
@@ -1128,7 +1128,7 @@ static struct scu_platform_data scu_platform_data[] = {
 	},
 	[scu2] = {
 		.board_type = "SCU2 x86",
-		.part_number = SCU_PARTNUM_GEN2,
+		.lru_part_number = SCU_LRU_PARTNUM_GEN2,
 		.version = scu2,
 		.eeprom_len = SCU_EEPROM_LEN_GEN2,
 		.i2c_board_info = scu_i2c_info_scu2,
@@ -1138,7 +1138,7 @@ static struct scu_platform_data scu_platform_data[] = {
 	},
 	[scu3] = {
 		.board_type = "SCU3 x86",
-		.part_number = SCU_PARTNUM_GEN3,
+		.lru_part_number = SCU_LRU_PARTNUM_GEN3,
 		.version = scu3,
 		.eeprom_len = SCU_EEPROM_LEN_GEN3,
 		.i2c_board_info = scu_i2c_info_scu3,
@@ -1269,10 +1269,11 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	/* Update platform data based on part number retrieved from EEPROM */
 	for (i = 0; i < ARRAY_SIZE(scu_platform_data); i++) {
 		pdata = &scu_platform_data[i];
-		if (pdata->part_number == NULL)
+		if (pdata->lru_part_number == NULL)
 			continue;
-		if (!strncmp(data->eeprom.lru_part_number, pdata->part_number,
-			     strlen(pdata->part_number))) {
+		if (!strncmp(data->eeprom.lru_part_number,
+			     pdata->lru_part_number,
+			     strlen(pdata->lru_part_number))) {
 			data->pdata = pdata;
 			break;
 		}
