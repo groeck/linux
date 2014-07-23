@@ -1199,6 +1199,28 @@ static int scu_instantiate_spi(struct scu_data *data,
 	return 0;
 }
 
+static void populate_unit_info(struct memory_accessor *mem_accessor,
+			       void *context);
+
+static struct at24_platform_data at24c08 = {
+	.byte_len = 1024,
+	.page_size = 16,
+	.setup = populate_unit_info,
+};
+
+static struct i2c_board_info scu_i2c_info_common[] = {
+	{ I2C_BOARD_INFO("scu_pic", 0x20)},
+	{ I2C_BOARD_INFO("at24", 0x54),
+		.platform_data = &at24c08},
+	{ I2C_BOARD_INFO("ds1682", 0x6b)},
+	{ I2C_BOARD_INFO("pca9538", 0x71),
+		.platform_data = &scu_pca953x_pdata[1],},
+	{ I2C_BOARD_INFO("pca9538", 0x72),
+		.platform_data = &scu_pca953x_pdata[2],},
+	{ I2C_BOARD_INFO("pca9538", 0x73),
+		.platform_data = &scu_pca953x_pdata[3],},
+};
+
 /*
  * This is the callback function when a a specifc at24 eeprom is found.
  * Its reads out the eeprom contents via the read function passed back in via
@@ -1247,6 +1269,8 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	/* Update platform data based on part number retrieved from EEPROM */
 	for (i = 0; i < ARRAY_SIZE(scu_platform_data); i++) {
 		pdata = &scu_platform_data[i];
+		if (pdata->part_number == NULL)
+			continue;
 		if (!strncmp(data->eeprom.lru_part_number, pdata->part_number,
 			     strlen(pdata->part_number))) {
 			data->pdata = pdata;
@@ -1266,7 +1290,8 @@ unprogrammed:
 		pdata->init(data);
 
 	if (pdata->i2c_board_info)
-		scu_instantiate_i2c(data, 7, pdata->i2c_board_info,
+		scu_instantiate_i2c(data, ARRAY_SIZE(scu_i2c_info_common),
+				    pdata->i2c_board_info,
 				    pdata->num_i2c_board_info);
 
 	if (pdata->spi_board_info)
@@ -1299,25 +1324,6 @@ done:
 	if (sysfs_create_bin_file(&data->dev->kobj, &scu_eeprom_file))
 		;
 }
-
-static struct at24_platform_data at24c08 = {
-	.byte_len = 1024,
-	.page_size = 16,
-	.setup = populate_unit_info,
-};
-
-static struct i2c_board_info scu_i2c_info_common[] = {
-	{ I2C_BOARD_INFO("scu_pic", 0x20)},
-	{ I2C_BOARD_INFO("at24", 0x54),
-		.platform_data = &at24c08},
-	{ I2C_BOARD_INFO("ds1682", 0x6b)},
-	{ I2C_BOARD_INFO("pca9538", 0x71),
-		.platform_data = &scu_pca953x_pdata[1],},
-	{ I2C_BOARD_INFO("pca9538", 0x72),
-		.platform_data = &scu_pca953x_pdata[2],},
-	{ I2C_BOARD_INFO("pca9538", 0x73),
-		.platform_data = &scu_pca953x_pdata[3],},
-};
 
 static int scu_i2c_adap_name_match(struct device *dev, void *data)
 {
