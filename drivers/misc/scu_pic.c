@@ -34,9 +34,17 @@
 #include <linux/leds.h>
 #include <linux/delay.h>
 #include <linux/reboot.h>
+#include <linux/workqueue.h>
 #include "scu_pic.h"
 
 static const unsigned short normal_i2c[] = { 0x20, I2C_CLIENT_END };
+
+#define DEFAULT_POLL_RATE	200	/* in ms */
+
+static int poll_rate = DEFAULT_POLL_RATE;
+module_param(poll_rate, int, 0644);
+MODULE_PARM_DESC(poll_rate,
+		 "Reset state poll rate, in milli-seconds. Set to 0 to disable.");
 
 struct scu_pic_data {
 	struct i2c_client *client;
@@ -44,11 +52,15 @@ struct scu_pic_data {
 	struct kref kref;
 	struct list_head list;		/* member of scu_pic_data_list */
 
+	/* worker */
+	struct delayed_work work;
+	struct workqueue_struct *workqueue;
+	bool reset_pin_state;
+
 	/* hwmon */
 	struct device *hwmon_dev;
 	u8 version_major;
 	u8 version_minor;
-	u8 reset_reason;
 	u8 fan_contr_model;
 	u8 fan_contr_rev;
 
@@ -149,24 +161,47 @@ scu_pic_write_value(struct i2c_client *client, u8 reg, u8 value)
 
 /* hardware monitoring */
 
-static struct scu_pic_data *get_reset_reason(struct device *dev)
+static int get_reset_pin_state(struct i2c_client *client)
+{
+	/*
+	 * Get the reset pin state from the PIC
+	*/
+	return scu_pic_read_value(client, I2C_GET_SCU_PIC_RESET_PIN_STATE);
+}
+
+static ssize_t show_reset_pin_state(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	int state = get_reset_pin_state(to_i2c_client(dev));
+
+	if (state < 0)
+		return state;
+
+	return sprintf(buf, "%d\n", state);
+}
+
+static DEVICE_ATTR(reset_pin_state, S_IRUGO, show_reset_pin_state, NULL);
+
+static int get_reset_reason(struct device *dev)
 {
 	struct i2c_client *client = to_i2c_client(dev);
-	struct scu_pic_data *data = i2c_get_clientdata(client);
+
 	/*
 	 * Get the reset reason from the PIC
 	 */
-	data->reset_reason = scu_pic_read_value(client, I2C_GET_SCU_PIC_RESET_REASON);
-
-	return data;
+	return scu_pic_read_value(client, I2C_GET_SCU_PIC_RESET_REASON);
 }
 
 
 static ssize_t show_reset_reason(struct device *dev,
-			struct device_attribute *attr, char *buf)
+				 struct device_attribute *attr, char *buf)
 {
-	struct scu_pic_data *data = get_reset_reason(dev);
-	return sprintf(buf, "%d\n", data->reset_reason);
+	int reason = get_reset_reason(dev);
+
+	if (reason < 0)
+		return reason;
+
+	return sprintf(buf, "%d\n", reason);
 }
 
 static DEVICE_ATTR(reset_reason, S_IRUGO, show_reset_reason, NULL);
@@ -416,6 +451,7 @@ static struct attribute *scu_pic_attributes[] = {
 	&dev_attr_version.attr,
 	&dev_attr_reset.attr,
 	&dev_attr_reset_reason.attr,
+	&dev_attr_reset_pin_state.attr,
 	NULL
 };
 
@@ -634,6 +670,25 @@ static int scu_pic_wdt_exit(struct i2c_client *client)
 	return 0;
 }
 
+/* reset poll worker */
+
+static void scu_pic_reset_poll(struct work_struct *work)
+{
+	struct scu_pic_data *data = container_of(to_delayed_work(work),
+						 struct scu_pic_data, work);
+	int state;
+
+	state = get_reset_pin_state(data->client);
+	if (state >= 0) {
+		if (!!state != data->reset_pin_state)
+			sysfs_notify(&data->client->dev.kobj, NULL,
+				     "reset_pin_state");
+		data->reset_pin_state = state;
+	}
+	queue_delayed_work(data->workqueue, &data->work,
+			   msecs_to_jiffies(poll_rate));
+}
+
 /* device level functions */
 
 static int scu_pic_probe(struct i2c_client *client,
@@ -710,12 +765,25 @@ static int scu_pic_probe(struct i2c_client *client,
 		goto exit_led;
 	}
 
+	if (poll_rate) {
+		data->workqueue = create_singlethread_workqueue("scu-pic-poll");
+		if (data->workqueue == NULL) {
+			err = -ENOMEM;
+			goto exit_hwmon;
+		}
+		INIT_DELAYED_WORK(&data->work, scu_pic_reset_poll);
+		queue_delayed_work(data->workqueue, &data->work,
+				   msecs_to_jiffies(poll_rate));
+	}
+
 	dev_info(dev,
 		 "SCU PIC Firmware revision %d.%d Fan controller model 0x%02x revision 0x%02x\n",
 		 major, minor, data->fan_contr_model, data->fan_contr_rev);
 
 	return 0;
 
+exit_hwmon:
+	scu_pic_hwmon_exit(client);
 exit_led:
 	scu_pic_led_exit(client);
 exit_wdt:
@@ -731,6 +799,8 @@ static int scu_pic_remove(struct i2c_client *client)
 	struct scu_pic_data *data = i2c_get_clientdata(client);
 
 	scu_pic_reset_client = NULL;
+
+	cancel_delayed_work_sync(&data->work);
 
 	scu_pic_hwmon_exit(client);
 	scu_pic_led_exit(client);
