@@ -35,7 +35,6 @@
 #include <linux/version.h>
 #include <linux/platform_data/at24.h>
 #include <linux/platform_data/pca953x.h>
-#include <linux/lis3lv02d.h>
 #include <linux/sysfs.h>
 #include <linux/spi/spi.h>
 #include <linux/proc_fs.h>
@@ -93,9 +92,9 @@ struct __packed eeprom_data {
 				/* 61 - 67 Base Board Serial Number */
 	unsigned char board_date_of_manufacture[7];
 				/* 68 - 74 Base Board Date of Manufacture */
-	unsigned char updated_board_date_of_manufacture[7];
+	unsigned char board_updated_date_of_manufacture[7];
 				/* 75 - 81 Updated Box Date of Manufacture */
-	unsigned char updated_board_revision[7];
+	unsigned char board_updated_revision[7];
 				/* 82 - 88 Updated Box Revision */
 	unsigned char dummy[7];	/* 89 - 95 spare/filler */
 };
@@ -339,17 +338,17 @@ static ssize_t lru_revision_store(struct device *dev,
 }
 
 static ssize_t
-updated_board_revision_show(struct device *dev, struct device_attribute *attr,
+board_updated_revision_show(struct device *dev, struct device_attribute *attr,
 			    char *buf)
 {
 	struct scu_data *data = dev_get_drvdata(dev);
 
-	return scu_object_show(buf, data->eeprom.updated_board_revision,
-			       sizeof(data->eeprom.updated_board_revision));
+	return scu_object_show(buf, data->eeprom.board_updated_revision,
+			       sizeof(data->eeprom.board_updated_revision));
 }
 
 static ssize_t
-updated_board_revision_store(struct device *dev, struct device_attribute *attr,
+board_updated_revision_store(struct device *dev, struct device_attribute *attr,
 			     const char *buf, size_t count)
 {
 	struct scu_data *data = dev_get_drvdata(dev);
@@ -357,9 +356,9 @@ updated_board_revision_store(struct device *dev, struct device_attribute *attr,
 
 	ret = scu_object_store(data,
 				offsetof(struct eeprom_data,
-					 updated_board_revision),
-				buf, data->eeprom.updated_board_revision,
-				sizeof(data->eeprom.updated_board_revision));
+					 board_updated_revision),
+				buf, data->eeprom.board_updated_revision,
+				sizeof(data->eeprom.board_updated_revision));
 	return ret < 0 ? ret : count;
 }
 
@@ -389,18 +388,18 @@ static ssize_t lru_date_of_manufacture_store(struct device *dev,
 }
 
 static ssize_t
-updated_board_date_of_manufacture_show(struct device *dev,
+board_updated_date_of_manufacture_show(struct device *dev,
 				       struct device_attribute *attr, char *buf)
 {
 	struct scu_data *data = dev_get_drvdata(dev);
 
 	return scu_object_show(buf,
-			data->eeprom.updated_board_date_of_manufacture,
-			sizeof(data->eeprom.updated_board_date_of_manufacture));
+			data->eeprom.board_updated_date_of_manufacture,
+			sizeof(data->eeprom.board_updated_date_of_manufacture));
 }
 
 static ssize_t
-updated_board_date_of_manufacture_store(struct device *dev,
+board_updated_date_of_manufacture_store(struct device *dev,
 					struct device_attribute *devattr,
 					const char *buf, size_t count)
 {
@@ -409,9 +408,9 @@ updated_board_date_of_manufacture_store(struct device *dev,
 
 	ret = scu_object_store(data,
 			offsetof(struct eeprom_data,
-				 updated_board_date_of_manufacture),
-			buf, data->eeprom.updated_board_date_of_manufacture,
-			sizeof(data->eeprom.updated_board_date_of_manufacture));
+				 board_updated_date_of_manufacture),
+			buf, data->eeprom.board_updated_date_of_manufacture,
+			sizeof(data->eeprom.board_updated_date_of_manufacture));
 	return ret < 0 ? ret : count;
 }
 
@@ -515,9 +514,9 @@ static DEVICE_ATTR_RW(attribute_magic);
 static DEVICE_ATTR_RW(lru_part_number);
 static DEVICE_ATTR_RW(lru_serial_number);
 static DEVICE_ATTR_RW(lru_revision);
-static DEVICE_ATTR_RW(updated_board_revision);	/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_updated_revision);	/* SCU2/SCU3 only */
 static DEVICE_ATTR_RW(lru_date_of_manufacture);	/* SCU2/SCU3 only */
-static DEVICE_ATTR_RW(updated_board_date_of_manufacture); /* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_updated_date_of_manufacture); /* SCU2/SCU3 only */
 static DEVICE_ATTR_RW(board_part_number);
 static DEVICE_ATTR_RW(board_serial_number);
 static DEVICE_ATTR_RW(board_revision);
@@ -537,9 +536,9 @@ static struct attribute *scu_eeprom_attrs[] = {
 	&dev_attr_lru_part_number.attr,			/* 1 */
 	&dev_attr_lru_serial_number.attr,
 	&dev_attr_lru_revision.attr,
-	&dev_attr_updated_board_revision.attr,		/* 4 */
+	&dev_attr_board_updated_revision.attr,		/* 4 */
 	&dev_attr_lru_date_of_manufacture.attr,
-	&dev_attr_updated_board_date_of_manufacture.attr,
+	&dev_attr_board_updated_date_of_manufacture.attr,
 	&dev_attr_board_part_number.attr,
 	&dev_attr_board_serial_number.attr,
 	&dev_attr_board_revision.attr,
@@ -573,11 +572,13 @@ static struct attribute_group scu_eeprom_group = {
 	.is_visible = scu_attr_is_visible,
 };
 
-#define SCU_EEPROM_BIN_SIZE	32
+#define SCU_EEPROM_TEST_SCRATCHPAD_SIZE	32
 
-static ssize_t scu_eeprom_bin_read(struct file *filp, struct kobject *kobj,
-				   struct bin_attribute *attr, char *buf,
-				   loff_t off, size_t count)
+static ssize_t scu_eeprom_test_scratchpad_read(struct file *filp,
+					       struct kobject *kobj,
+					       struct bin_attribute *attr,
+					       char *buf, loff_t off,
+					       size_t count)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct scu_data *data = dev_get_drvdata(dev);
@@ -588,15 +589,17 @@ static ssize_t scu_eeprom_bin_read(struct file *filp, struct kobject *kobj,
 	if (off >= attr->size)
 		return -EFBIG;
 
-	if (off + count >= SCU_EEPROM_BIN_SIZE)
-		count = SCU_EEPROM_BIN_SIZE - off;
+	if (off + count >= SCU_EEPROM_TEST_SCRATCHPAD_SIZE)
+		count = SCU_EEPROM_TEST_SCRATCHPAD_SIZE - off;
 
 	return data->macc->read(data->macc, buf, off, count);
 }
 
-static ssize_t scu_eeprom_bin_write(struct file *filp, struct kobject *kobj,
-				    struct bin_attribute *attr, char *buf,
-				    loff_t off, size_t count)
+static ssize_t scu_eeprom_test_scratchpad_write(struct file *filp,
+						struct kobject *kobj,
+						struct bin_attribute *attr,
+						char *buf, loff_t off,
+						size_t count)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
 	struct scu_data *data = dev_get_drvdata(dev);
@@ -607,20 +610,22 @@ static ssize_t scu_eeprom_bin_write(struct file *filp, struct kobject *kobj,
 	if (off >= attr->size)
 		return -EFBIG;
 
-	if (off + count >= SCU_EEPROM_BIN_SIZE)
-		count = SCU_EEPROM_BIN_SIZE - off;
+	if (off + count >= SCU_EEPROM_TEST_SCRATCHPAD_SIZE)
+		count = SCU_EEPROM_TEST_SCRATCHPAD_SIZE - off;
 
 	return data->macc->write(data->macc, buf, off, count);
 }
 
-static struct bin_attribute scu_eeprom_file = {
+/* base offset for 32 byte "eeprom_test_scratchpad" file is 0 */
+
+static struct bin_attribute scu_eeprom_test_scratchpad_file = {
 	.attr = {
-		.name = "eeprom_scratchpad",
+		.name = "eeprom_test_scratchpad",
 		.mode = S_IRUGO | S_IWUSR,
 	},
-	.size = SCU_EEPROM_BIN_SIZE,
-	.read = scu_eeprom_bin_read,
-	.write = scu_eeprom_bin_write,
+	.size = SCU_EEPROM_TEST_SCRATCHPAD_SIZE,
+	.read = scu_eeprom_test_scratchpad_read,
+	.write = scu_eeprom_test_scratchpad_write,
 };
 
 /* platform data */
@@ -1322,7 +1327,8 @@ error_noclean:
 done:
 	if (sysfs_create_group(&data->dev->kobj, &scu_eeprom_group))
 		;
-	if (sysfs_create_bin_file(&data->dev->kobj, &scu_eeprom_file))
+	if (sysfs_create_bin_file(&data->dev->kobj,
+				  &scu_eeprom_test_scratchpad_file))
 		;
 }
 
@@ -1504,7 +1510,8 @@ static int __exit scu_remove(struct platform_device *pdev)
 	struct scu_data *data = platform_get_drvdata(pdev);
 	int i;
 
-	sysfs_remove_bin_file(&data->dev->kobj, &scu_eeprom_file);
+	sysfs_remove_bin_file(&data->dev->kobj,
+			      &scu_eeprom_test_scratchpad_file);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
