@@ -1235,7 +1235,7 @@ static struct i2c_board_info scu_i2c_info_common[] = {
 static void populate_unit_info(struct memory_accessor *mem_accessor,
 			       void *context)
 {
-	const struct scu_platform_data *pdata;
+	const struct scu_platform_data *pdata = &scu_platform_data[unknown];
 	struct scu_data *data = context;
 	unsigned char *ptr;
 	int i, len;
@@ -1256,7 +1256,6 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 	/* Special case - eeprom not programmed */
 	if (data->eeprom.length == 0xffff && data->eeprom.checksum == 0xff) {
 		/* Assume it is SCU3, but report different board type */
-		data->pdata = &scu_platform_data[unknown];
 		memset(&data->eeprom, '\0', sizeof(data->eeprom));
 		data->eeprom.length = cpu_to_le16(SCU_EEPROM_LEN_EEPROM);
 		goto unprogrammed;
@@ -1273,19 +1272,19 @@ static void populate_unit_info(struct memory_accessor *mem_accessor,
 
 	/* Update platform data based on part number retrieved from EEPROM */
 	for (i = 0; i < ARRAY_SIZE(scu_platform_data); i++) {
-		pdata = &scu_platform_data[i];
-		if (pdata->lru_part_number == NULL)
+		const struct scu_platform_data *tpdata = &scu_platform_data[i];
+		if (tpdata->lru_part_number == NULL)
 			continue;
 		if (!strncmp(data->eeprom.lru_part_number,
-			     pdata->lru_part_number,
-			     strlen(pdata->lru_part_number))) {
-			data->pdata = pdata;
+			     tpdata->lru_part_number,
+			     strlen(tpdata->lru_part_number))) {
+			pdata = tpdata;
 			break;
 		}
 	}
 
 unprogrammed:
-	pdata = data->pdata;
+	data->pdata = pdata;
 	/*
 	 * We know as much as we will ever find out about the platform.
 	 * Perform final platform initialization and instantiate additional
@@ -1432,9 +1431,6 @@ static int scu_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, data);
 
-	data->pdata = dev_get_platdata(dev);
-	if (!data->pdata)
-		return -ENODEV;
 	data->dev = dev;
 
 	mutex_init(&data->write_lock);
@@ -1515,7 +1511,7 @@ static int __exit scu_remove(struct platform_device *pdev)
 	sysfs_remove_group(&pdev->dev.kobj, &scu_eeprom_group);
 	sysfs_remove_group(&pdev->dev.kobj, &scu_base_group);
 
-	if (data->pdata->remove)
+	if (data->pdata && data->pdata->remove)
 		data->pdata->remove(data);
 
 	pca_leds_unregister(data);
@@ -1548,19 +1544,11 @@ static struct platform_device *scu_pdev;
 
 static int scu_create_platform_device(const struct dmi_system_id *id)
 {
-	struct scu_platform_data *pdata = id->driver_data;
 	int ret;
-
-	if (pdata == NULL)
-		return -EINVAL;
 
 	scu_pdev = platform_device_alloc("scu", -1);
 	if (!scu_pdev)
 		return -ENOMEM;
-
-	ret = platform_device_add_data(scu_pdev, pdata, sizeof(*pdata));
-	if (ret)
-		goto err;
 
 	ret = platform_device_add(scu_pdev);
 	if (ret)
@@ -1579,7 +1567,6 @@ static const struct dmi_system_id scu_device_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
 			DMI_MATCH(DMI_BOARD_NAME, "PXT"),
 		},
-		.driver_data = &scu_platform_data[scu1],
 		.callback = scu_create_platform_device,
 	},
 	{
@@ -1588,7 +1575,6 @@ static const struct dmi_system_id scu_device_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
 			DMI_MATCH(DMI_BOARD_NAME, "COMe-bSC6"),
 		},
-		.driver_data = &scu_platform_data[scu2],
 		.callback = scu_create_platform_device,
 	},
 	{
@@ -1597,7 +1583,6 @@ static const struct dmi_system_id scu_device_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
 			DMI_MATCH(DMI_BOARD_NAME, "COMe-bIP2"),
 		},
-		.driver_data = &scu_platform_data[scu2],
 		.callback = scu_create_platform_device,
 	},
 	{
@@ -1606,7 +1591,6 @@ static const struct dmi_system_id scu_device_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "Kontron"),
 			DMI_MATCH(DMI_BOARD_NAME, "COMe-bSC2"),
 		},
-		.driver_data = &scu_platform_data[scu2],
 		.callback = scu_create_platform_device,
 	},
 	{ }
