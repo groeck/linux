@@ -337,31 +337,6 @@ static ssize_t lru_revision_store(struct device *dev,
 	return ret < 0 ? ret : count;
 }
 
-static ssize_t
-board_updated_revision_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
-{
-	struct scu_data *data = dev_get_drvdata(dev);
-
-	return scu_object_show(buf, data->eeprom.board_updated_revision,
-			       sizeof(data->eeprom.board_updated_revision));
-}
-
-static ssize_t
-board_updated_revision_store(struct device *dev, struct device_attribute *attr,
-			     const char *buf, size_t count)
-{
-	struct scu_data *data = dev_get_drvdata(dev);
-	int ret;
-
-	ret = scu_object_store(data,
-				offsetof(struct eeprom_data,
-					 board_updated_revision),
-				buf, data->eeprom.board_updated_revision,
-				sizeof(data->eeprom.board_updated_revision));
-	return ret < 0 ? ret : count;
-}
-
 static ssize_t lru_date_of_manufacture_show(struct device *dev,
 					    struct device_attribute *attr,
 					    char *buf)
@@ -384,33 +359,6 @@ static ssize_t lru_date_of_manufacture_store(struct device *dev,
 					 lru_date_of_manufacture),
 				buf, data->eeprom.lru_date_of_manufacture,
 				sizeof(data->eeprom.lru_date_of_manufacture));
-	return ret < 0 ? ret : count;
-}
-
-static ssize_t
-board_updated_date_of_manufacture_show(struct device *dev,
-				       struct device_attribute *attr, char *buf)
-{
-	struct scu_data *data = dev_get_drvdata(dev);
-
-	return scu_object_show(buf,
-			data->eeprom.board_updated_date_of_manufacture,
-			sizeof(data->eeprom.board_updated_date_of_manufacture));
-}
-
-static ssize_t
-board_updated_date_of_manufacture_store(struct device *dev,
-					struct device_attribute *devattr,
-					const char *buf, size_t count)
-{
-	struct scu_data *data = dev_get_drvdata(dev);
-	int ret;
-
-	ret = scu_object_store(data,
-			offsetof(struct eeprom_data,
-				 board_updated_date_of_manufacture),
-			buf, data->eeprom.board_updated_date_of_manufacture,
-			sizeof(data->eeprom.board_updated_date_of_manufacture));
 	return ret < 0 ? ret : count;
 }
 
@@ -509,18 +457,70 @@ static ssize_t board_date_of_manufacture_store(struct device *dev,
 	return ret < 0 ? ret : count;
 }
 
+static ssize_t
+board_updated_revision_show(struct device *dev, struct device_attribute *attr,
+			    char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf, data->eeprom.board_updated_revision,
+			       sizeof(data->eeprom.board_updated_revision));
+}
+
+static ssize_t
+board_updated_revision_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+				offsetof(struct eeprom_data,
+					 board_updated_revision),
+				buf, data->eeprom.board_updated_revision,
+				sizeof(data->eeprom.board_updated_revision));
+	return ret < 0 ? ret : count;
+}
+
+static ssize_t
+board_updated_date_of_manufacture_show(struct device *dev,
+				       struct device_attribute *attr, char *buf)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+
+	return scu_object_show(buf,
+			data->eeprom.board_updated_date_of_manufacture,
+			sizeof(data->eeprom.board_updated_date_of_manufacture));
+}
+
+static ssize_t
+board_updated_date_of_manufacture_store(struct device *dev,
+					struct device_attribute *devattr,
+					const char *buf, size_t count)
+{
+	struct scu_data *data = dev_get_drvdata(dev);
+	int ret;
+
+	ret = scu_object_store(data,
+			offsetof(struct eeprom_data,
+				 board_updated_date_of_manufacture),
+			buf, data->eeprom.board_updated_date_of_manufacture,
+			sizeof(data->eeprom.board_updated_date_of_manufacture));
+	return ret < 0 ? ret : count;
+}
+
 static DEVICE_ATTR_RO(board_type);
 static DEVICE_ATTR_RW(attribute_magic);
 static DEVICE_ATTR_RW(lru_part_number);
 static DEVICE_ATTR_RW(lru_serial_number);
 static DEVICE_ATTR_RW(lru_revision);
-static DEVICE_ATTR_RW(board_updated_revision);	/* SCU2/SCU3 only */
-static DEVICE_ATTR_RW(lru_date_of_manufacture);	/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(lru_date_of_manufacture);		/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_part_number);		/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_serial_number);		/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_revision);			/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_date_of_manufacture);	/* SCU2/SCU3 only */
+static DEVICE_ATTR_RW(board_updated_revision);		/* SCU2/SCU3 only */
 static DEVICE_ATTR_RW(board_updated_date_of_manufacture); /* SCU2/SCU3 only */
-static DEVICE_ATTR_RW(board_part_number);
-static DEVICE_ATTR_RW(board_serial_number);
-static DEVICE_ATTR_RW(board_revision);
-static DEVICE_ATTR_RW(board_date_of_manufacture);
 
 static struct attribute *scu_base_attrs[] = {
 	&dev_attr_board_type.attr,
@@ -536,13 +536,13 @@ static struct attribute *scu_eeprom_attrs[] = {
 	&dev_attr_lru_part_number.attr,			/* 1 */
 	&dev_attr_lru_serial_number.attr,
 	&dev_attr_lru_revision.attr,
-	&dev_attr_board_updated_revision.attr,		/* 4 */
-	&dev_attr_lru_date_of_manufacture.attr,
-	&dev_attr_board_updated_date_of_manufacture.attr,
+	&dev_attr_lru_date_of_manufacture.attr,		/* 4 */
 	&dev_attr_board_part_number.attr,
 	&dev_attr_board_serial_number.attr,
 	&dev_attr_board_revision.attr,
 	&dev_attr_board_date_of_manufacture.attr,
+	&dev_attr_board_updated_revision.attr,
+	&dev_attr_board_updated_date_of_manufacture.attr,
 	NULL
 };
 
@@ -1004,8 +1004,10 @@ static struct i2c_board_info scu_i2c_info_scu3[] = {
 
 /* SCU specific gpio pin names. Only works if module is built into kernel. */
 static const char * const scu_ichx_gpiolib_names[128] = {
-	[3] = "ac_loss_detect",	/* GPI3 */
-	[16] = "debug_out",	/* GPO0 */
+	[0] = "switch_interrupt",	/* GPI0 */
+	[3] = "ac_loss_detect",		/* GPI3 */
+	[16] = "debug_out",		/* GPO0 */
+	[20] = "switch_reset",		/* GPO3 */
 };
 
 const char * const (* const ichx_gpiolib_names)[] = &scu_ichx_gpiolib_names;
@@ -1039,8 +1041,8 @@ static void pch_gpio_setup(struct scu_data *data)
 			data->mdio_dev = NULL;
 		}
 		/* generic: 0, 3 (input), 16, 20 (output) */
-		scu_gpio_common_setup(chip->base, 22, 0x110009, 0x00000b, 0x0,
-				      0x0);
+		scu_gpio_common_setup(chip->base, 22, 0x110009, 0x00000b,
+				      0x100000, 0x0);
 	}
 }
 
