@@ -45,7 +45,6 @@ static int poll_rate = DEFAULT_POLL_RATE;
 module_param(poll_rate, int, 0644);
 MODULE_PARM_DESC(poll_rate,
 		 "Reset state poll rate, in milli-seconds. Set to 0 to disable.");
-
 struct scu_pic_data {
 	struct i2c_client *client;
 	struct mutex i2c_lock;
@@ -161,11 +160,33 @@ scu_pic_write_value(struct i2c_client *client, u8 reg, u8 value)
 
 /* hardware monitoring */
 
-static int get_reset_pin_state(struct i2c_client *client)
+static int get_thermal_override_state(struct i2c_client *client)
 {
 	/*
+	 * Get the thermal override state from the PIC
+	 */
+	return scu_pic_read_value(client, I2C_GET_SCU_PIC_THERMAL_OVERRIDE_STATE);
+}
+
+static ssize_t show_thermal_override_state(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	int state = get_thermal_override_state(to_i2c_client(dev));
+
+	if (state < 0)
+		return state;
+
+	return sprintf(buf, "%d\n", state);
+}
+
+static DEVICE_ATTR(thermal_override_state, S_IRUGO, show_thermal_override_state, NULL);
+
+static int get_reset_pin_state(struct i2c_client *client)
+{
+
+	/*
 	 * Get the reset pin state from the PIC
-	*/
+	 */
 	return scu_pic_read_value(client, I2C_GET_SCU_PIC_RESET_PIN_STATE);
 }
 
@@ -194,7 +215,7 @@ static int get_reset_reason(struct device *dev)
 
 
 static ssize_t show_reset_reason(struct device *dev,
-				 struct device_attribute *attr, char *buf)
+			struct device_attribute *attr, char *buf)
 {
 	int reason = get_reset_reason(dev);
 
@@ -452,6 +473,7 @@ static struct attribute *scu_pic_attributes[] = {
 	&dev_attr_reset.attr,
 	&dev_attr_reset_reason.attr,
 	&dev_attr_reset_pin_state.attr,
+	&dev_attr_thermal_override_state.attr,
 	NULL
 };
 
@@ -775,7 +797,6 @@ static int scu_pic_probe(struct i2c_client *client,
 		queue_delayed_work(data->workqueue, &data->work,
 				   msecs_to_jiffies(poll_rate));
 	}
-
 	dev_info(dev,
 		 "SCU PIC Firmware revision %d.%d Fan controller model 0x%02x revision 0x%02x\n",
 		 major, minor, data->fan_contr_model, data->fan_contr_rev);
@@ -799,7 +820,6 @@ static int scu_pic_remove(struct i2c_client *client)
 	struct scu_pic_data *data = i2c_get_clientdata(client);
 
 	scu_pic_reset_client = NULL;
-
 	cancel_delayed_work_sync(&data->work);
 
 	scu_pic_hwmon_exit(client);
