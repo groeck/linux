@@ -345,7 +345,6 @@ static int fan_from_reg(struct scu_pic_data *data, u8 reg)
 		return 0;
 
 	switch (data->fan_contr_model) {
-	case 0:
 	case FAN_CONTR_MODEL_ADM1031:
 		mult = data->pwm_state == 2 ? 30 : 60;
 		speed = DIV_ROUND_CLOSEST(11250 * mult, reg);
@@ -752,7 +751,7 @@ static int scu_pic_probe(struct i2c_client *client,
 			dev_err(dev,
 				"Failed to read fan controller model (%d)\n",
 				model);
-			model = 0;
+			model = FAN_CONTR_MODEL_ADM1031;
 		}
 		rev = scu_pic_read_value(client,
 					 I2C_GET_SCU_PIC_FAN_CONTR_REV);
@@ -764,6 +763,9 @@ static int scu_pic_probe(struct i2c_client *client,
 		}
 		data->fan_contr_model = model;
 		data->fan_contr_rev = rev;
+	} else {
+		/* Old firmware, default to ADM1031 */
+		data->fan_contr_model = FAN_CONTR_MODEL_ADM1031;
 	}
 
 	mutex_init(&data->i2c_lock);
