@@ -410,7 +410,7 @@ static ssize_t show_version(struct device *dev,
 	struct i2c_client *client = to_i2c_client(dev);
 	struct scu_pic_data *data = i2c_get_clientdata(client);
 
-	return sprintf(buf, "%u.%u\n", data->version_major, data->version_minor);
+	return sprintf(buf, "%u.%02u\n", data->version_major, data->version_minor);
 }
 
 static DEVICE_ATTR(version, S_IRUGO, show_version, NULL);
@@ -800,7 +800,7 @@ static int scu_pic_probe(struct i2c_client *client,
 				   msecs_to_jiffies(poll_rate));
 	}
 	dev_info(dev,
-		 "SCU PIC Firmware revision %d.%d Fan controller model 0x%02x revision 0x%02x\n",
+		 "SCU PIC Firmware revision %d.%02d Fan controller model 0x%02x revision 0x%02x\n",
 		 major, minor, data->fan_contr_model, data->fan_contr_rev);
 
 	return 0;
