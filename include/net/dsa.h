@@ -302,6 +302,7 @@ struct dsa_switch_driver {
 			   const unsigned char *addr, u16 vid);
 	int	(*fdb_getnext)(struct dsa_switch *ds, int port,
 			       unsigned char *addr);
+	void	(*port_flush)(struct dsa_switch *ds, int port);
 };
 
 void register_switch_driver(struct dsa_switch_driver *type);

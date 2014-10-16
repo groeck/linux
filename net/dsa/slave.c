@@ -408,6 +408,15 @@ static netdev_tx_t dsa_slave_notag_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 }
 
+static void dsa_slave_port_flush(struct net_device *dev)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->parent;
+
+	if (ds->drv->port_flush != NULL)
+		ds->drv->port_flush(ds, p->port);
+}
+
 
 /* ethtool operations *******************************************************/
 static int
@@ -671,6 +680,7 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_do_ioctl		= dsa_slave_ioctl,
 	.ndo_switch_parent_id_get = dsa_slave_parent_id_get,
 	.ndo_switch_port_stp_update = dsa_slave_stp_update,
+	.ndo_bridge_port_flush	= dsa_slave_port_flush,
 };
 
 static void dsa_slave_adjust_link(struct net_device *dev)
