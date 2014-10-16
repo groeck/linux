@@ -326,6 +326,28 @@ int switchdev_port_obj_dump(struct net_device *dev, struct switchdev_obj *obj)
 }
 EXPORT_SYMBOL_GPL(switchdev_port_obj_dump);
 
+/**
+ *	switchdev_port_flush - Flush switch port database
+ *	@dev: port device
+ *
+ *	Flush switch port database
+ */
+void switchdev_port_flush(struct net_device *dev)
+{
+	const struct switchdev_ops *ops = dev->switchdev_ops;
+	struct net_device *lower_dev;
+	struct list_head *iter;
+
+	if (ops && ops->switchdev_port_flush) {
+		ops->switchdev_port_flush(dev);
+		return;
+	}
+
+	netdev_for_each_lower_dev(dev, lower_dev, iter)
+		switchdev_port_flush(lower_dev);
+}
+EXPORT_SYMBOL_GPL(switchdev_port_flush);
+
 static DEFINE_MUTEX(switchdev_mutex);
 static RAW_NOTIFIER_HEAD(switchdev_notif_chain);
 

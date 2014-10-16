@@ -229,12 +229,26 @@ static void br_record_config_information(struct net_bridge_port *p,
 }
 
 /* called under bridge lock */
+static inline void br_topology_change_flush(struct net_bridge *br)
+{
+	struct net_bridge_port *p;
+
+	br_info(br, "flushing port address databases due to topology change\n");
+
+	list_for_each_entry(p, &br->port_list, list)
+		switchdev_port_flush(p->dev);
+}
+
+/* called under bridge lock */
 static void br_record_config_timeout_values(struct net_bridge *br,
 					    const struct br_config_bpdu *bpdu)
 {
 	br->max_age = bpdu->max_age;
 	br->hello_time = bpdu->hello_time;
 	br->forward_delay = bpdu->forward_delay;
+
+	if (!br->topology_change && bpdu->topology_change)
+		br_topology_change_flush(br);
 	br->topology_change = bpdu->topology_change;
 }
 
@@ -345,6 +359,7 @@ void br_topology_change_detection(struct net_bridge *br)
 		isroot ? "propagating" : "sending tcn bpdu");
 
 	if (isroot) {
+		br_topology_change_flush(br);
 		br->topology_change = 1;
 		mod_timer(&br->topology_change_timer, jiffies
 			  + br->bridge_forward_delay + br->bridge_max_age);

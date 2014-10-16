@@ -100,6 +100,7 @@ struct switchdev_ops {
 					  struct switchdev_obj *obj);
 	int	(*switchdev_port_obj_dump)(struct net_device *dev,
 					  struct switchdev_obj *obj);
+	void	(*switchdev_port_flush)(struct net_device *dev);
 };
 
 enum switchdev_notifier_type {
@@ -157,6 +158,7 @@ int switchdev_port_fdb_del(struct ndmsg *ndm, struct nlattr *tb[],
 int switchdev_port_fdb_dump(struct sk_buff *skb, struct netlink_callback *cb,
 			    struct net_device *dev,
 			    struct net_device *filter_dev, int idx);
+void switchdev_port_flush(struct net_device *dev);
 
 #else
 
@@ -188,6 +190,10 @@ static inline int switchdev_port_obj_dump(struct net_device *dev,
 					  struct switchdev_obj *obj)
 {
 	return -EOPNOTSUPP;
+}
+
+static inline void switchdev_port_flush(struct net_device *dev)
+{
 }
 
 static inline int register_switchdev_notifier(struct notifier_block *nb)
