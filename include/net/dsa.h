@@ -309,6 +309,8 @@ struct dsa_switch_driver {
 	int	(*port_vlan_add)(struct dsa_switch *ds, int port, u16 vid,
 				 u16 bridge_flags);
 	int	(*port_vlan_del)(struct dsa_switch *ds, int port, u16 vid);
+
+	void	(*port_flush)(struct dsa_switch *ds, int port);
 };
 
 void register_switch_driver(struct dsa_switch_driver *type);

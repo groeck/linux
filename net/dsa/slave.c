@@ -562,6 +562,15 @@ static int dsa_slave_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
 	return ds->drv->port_vlan_del(ds, p->port, vid);
 }
 
+static void dsa_slave_port_flush(struct net_device *dev)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->parent;
+
+	if (ds->drv->port_flush != NULL)
+		ds->drv->port_flush(ds, p->port);
+}
+
 /* ethtool operations *******************************************************/
 static int
 dsa_slave_get_settings(struct net_device *dev, struct ethtool_cmd *cmd)
@@ -834,6 +843,7 @@ static const struct switchdev_ops dsa_slave_switchdev_ops = {
 	.switchdev_port_attr_set	= dsa_slave_port_attr_set,
 	.switchdev_port_obj_add		= dsa_slave_port_obj_add,
 	.switchdev_port_obj_del		= dsa_slave_port_obj_del,
+	.switchdev_port_flush		= dsa_slave_port_flush,
 };
 
 static void dsa_slave_adjust_link(struct net_device *dev)
