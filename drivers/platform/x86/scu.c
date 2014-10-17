@@ -1057,6 +1057,7 @@ static void pch_gpio_teardown(struct scu_data *data)
 }
 
 static struct dsa_chip_data switch_chip_data = {
+	.eeprom_len	= 0x200,
         .port_names[0]	= "cpu",
         .port_names[1]	= "port1",
         .port_names[2]	= "port2",
@@ -1075,7 +1076,7 @@ static void scu_setup_ethernet_switch(struct scu_data *data)
 	};
 
 	switch_data.netdev = &data->netdev->dev;
-	switch_chip_data.mii_bus = &data->mdio_dev->dev;
+	switch_chip_data.host_dev = &data->mdio_dev->dev;
 	data->dsa_dev = platform_device_register_data(&platform_bus, "dsa",
 						      0, &switch_data,
 						      sizeof(switch_data));
