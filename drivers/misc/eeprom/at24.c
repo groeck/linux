@@ -198,6 +198,8 @@ static ssize_t at24_eeprom_read(struct at24_data *at24, char *buf,
 	case I2C_SMBUS_BYTE_DATA:
 		count = 1;
 		break;
+	case I2C_SMBUS_BYTE:
+		break;
 	default:
 		/*
 		 * When we have a better choice than SMBus calls, use a
@@ -248,6 +250,29 @@ static ssize_t at24_eeprom_read(struct at24_data *at24, char *buf,
 				buf[0] = status;
 				status = count;
 			}
+			break;
+		case I2C_SMBUS_BYTE:
+			/*
+			 * 16-bit data address. Write data address as separate
+			 * write operation, then read data without setting
+			 * the address again. This is not multi-master safe,
+			 * but the best we can do.
+			 */
+			i2c_lock_adapter(client->adapter);
+			status = __i2c_smbus_write_byte_data(client,
+							     offset >> 8,
+							     offset & 0xff);
+			if (status < 0)
+				break;
+			for (i = 0; i < count; i++) {
+				status = __i2c_smbus_read_byte(client);
+				if (status < 0)
+					break;
+				buf[i] = status;
+			}
+			i2c_unlock_adapter(client->adapter);
+			if (status >= 0)
+				status = count;
 			break;
 		default:
 			status = i2c_transfer(client->adapter, msg, 2);
@@ -371,6 +396,16 @@ static ssize_t at24_eeprom_write(struct at24_data *at24, const char *buf,
 			case I2C_SMBUS_I2C_BLOCK_DATA:
 				status = i2c_smbus_write_i2c_block_data(client,
 						offset, count, buf);
+				break;
+			case I2C_SMBUS_WORD_DATA:
+				/*
+				 * 16-bit data address. Transmit data address
+				 * MSB as SMBus command, data address LSB as
+				 * first data byte.
+				 */
+				status = i2c_smbus_write_word_data(client,
+					offset >> 8,
+					(offset & 0xff) | (buf[0] << 8));
 				break;
 			case I2C_SMBUS_BYTE_DATA:
 				status = i2c_smbus_write_byte_data(client,
@@ -540,10 +575,13 @@ static int at24_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	/* Use I2C operations unless we're stuck with SMBus extensions. */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
-		if (chip.flags & AT24_FLAG_ADDR16)
-			return -EPFNOSUPPORT;
-
-		if (i2c_check_functionality(client->adapter,
+		if (chip.flags & AT24_FLAG_ADDR16) {
+			if (!i2c_check_functionality(client->adapter,
+						I2C_FUNC_SMBUS_WRITE_BYTE_DATA |
+						I2C_FUNC_SMBUS_READ_BYTE))
+				return -EPFNOSUPPORT;
+			use_smbus = I2C_SMBUS_BYTE;
+		} else if (i2c_check_functionality(client->adapter,
 				I2C_FUNC_SMBUS_READ_I2C_BLOCK)) {
 			use_smbus = I2C_SMBUS_I2C_BLOCK_DATA;
 		} else if (i2c_check_functionality(client->adapter,
@@ -559,7 +597,13 @@ static int at24_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	/* Use I2C operations unless we're stuck with SMBus extensions. */
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
-		if (i2c_check_functionality(client->adapter,
+		if (chip.flags & AT24_FLAG_ADDR16) {
+			if (i2c_check_functionality(client->adapter,
+					I2C_FUNC_SMBUS_WRITE_WORD_DATA)) {
+				use_smbus_write = I2C_SMBUS_WORD_DATA;
+				chip.page_size = 1;
+			}
+		} else if (i2c_check_functionality(client->adapter,
 				I2C_FUNC_SMBUS_WRITE_I2C_BLOCK)) {
 			use_smbus_write = I2C_SMBUS_I2C_BLOCK_DATA;
 		} else if (i2c_check_functionality(client->adapter,
