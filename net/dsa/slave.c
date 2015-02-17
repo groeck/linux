@@ -799,7 +799,7 @@ static int dsa_slave_phy_setup(struct dsa_slave_priv *p,
 	if (!p->phy) {
 		p->phy = ds->slave_mii_bus->phy_map[p->port];
 		if (!p->phy)
-			return -ENODEV;
+			goto done;
 
 		/* Use already configured phy mode */
 		p->phy_interface = p->phy->interface;
@@ -810,6 +810,7 @@ static int dsa_slave_phy_setup(struct dsa_slave_priv *p,
 			    p->phy->addr, p->phy->drv->name);
 	}
 
+done:
 	return 0;
 }
 
