@@ -1007,6 +1007,17 @@ static int _mv88e6xxx_flush_fid(struct dsa_switch *ds, int fid)
 	return _mv88e6xxx_atu_cmd(ds, fid, GLOBAL_ATU_OP_FLUSH_NON_STATIC_DB);
 }
 
+static int mv88e6xxx_flush_fid(struct dsa_switch *ds, int fid)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int ret;
+
+	mutex_lock(&ps->smi_mutex);
+	ret = _mv88e6xxx_flush_fid(ds, fid);
+	mutex_unlock(&ps->smi_mutex);
+	return ret;
+}
+
 static int mv88e6xxx_set_port_state(struct dsa_switch *ds, int port, u8 state)
 {
 	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
@@ -1339,7 +1350,7 @@ static void mv88e6xxx_bridge_work(struct work_struct *work)
 {
 	struct mv88e6xxx_priv_state *ps;
 	struct dsa_switch *ds;
-	int port;
+	int port, fid;
 
 	ps = container_of(work, struct mv88e6xxx_priv_state, bridge_work);
 	ds = ((struct dsa_switch *)ps) - 1;
@@ -1348,6 +1359,12 @@ static void mv88e6xxx_bridge_work(struct work_struct *work)
 		port = __ffs(ps->port_state_update_mask);
 		clear_bit(port, &ps->port_state_update_mask);
 		mv88e6xxx_set_port_state(ds, port, ps->port_state[port]);
+	}
+
+	while (ps->fid_flush_mask) {
+		fid = __ffs(ps->fid_flush_mask);
+		clear_bit(fid, &ps->fid_flush_mask);
+		mv88e6xxx_flush_fid(ds, fid);
 	}
 }
 

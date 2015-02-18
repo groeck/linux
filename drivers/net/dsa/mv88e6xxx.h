@@ -368,6 +368,8 @@ struct mv88e6xxx_priv_state {
 	unsigned long port_state_update_mask;
 	u8 port_state[DSA_MAX_PORTS];
 
+	unsigned long fid_flush_mask;
+
 	struct work_struct bridge_work;
 };
 
