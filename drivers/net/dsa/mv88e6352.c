@@ -689,6 +689,16 @@ static int mv88e6352_get_sset_count(struct dsa_switch *ds)
 	return ARRAY_SIZE(mv88e6352_hw_stats);
 }
 
+static void mv88e6352_port_flush(struct dsa_switch *ds, int port)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+
+	netdev_dbg(ds->ports[port], "flush fid %d\n", ps->fid[port]);
+
+	set_bit(ps->fid[port], &ps->fid_flush_mask);
+	schedule_work(&ps->bridge_work);
+}
+
 struct dsa_switch_driver mv88e6352_switch_driver = {
 	.tag_protocol		= DSA_TAG_PROTO_EDSA,
 	.priv_size		= sizeof(struct mv88e6xxx_priv_state),
@@ -719,6 +729,7 @@ struct dsa_switch_driver mv88e6352_switch_driver = {
 	.fdb_add		= mv88e6xxx_port_fdb_add,
 	.fdb_del		= mv88e6xxx_port_fdb_del,
 	.fdb_getnext		= mv88e6xxx_port_fdb_getnext,
+	.port_flush		= mv88e6352_port_flush,
 };
 
 MODULE_ALIAS("platform:mv88e6352");
