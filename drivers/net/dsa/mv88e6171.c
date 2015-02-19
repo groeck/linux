@@ -296,8 +296,9 @@ static int mv88e6171_setup(struct dsa_switch *ds)
 	int i;
 	int ret;
 
-	mutex_init(&ps->smi_mutex);
-	mutex_init(&ps->stats_mutex);
+	ret = mv88e6xxx_setup_common(ds);
+	if (ret < 0)
+		return ret;
 
 	ret = mv88e6171_switch_reset(ds);
 	if (ret < 0)
