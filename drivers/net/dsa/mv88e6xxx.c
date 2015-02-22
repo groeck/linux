@@ -700,6 +700,31 @@ int mv88e6xxx_set_eee(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+int mv88e6xxx_setup_port_common(struct dsa_switch *ds, int port)
+{
+	u16 reg;
+
+	/* Port based VLAN map: give each port its own address
+	 * database, allow the CPU port to talk to each of the 'real'
+	 * ports, and allow each of the 'real' ports to only talk to
+	 * the upstream port.
+	 */
+	reg = (port & 0xf) << 12;
+	if (dsa_is_cpu_port(ds, port))
+		reg |= ds->phys_port_mask;
+	else
+		reg |= 1 << dsa_upstream_port(ds);
+
+	REG_WRITE(REG_PORT(port), 0x06, reg);
+
+	/* Default VLAN ID and priority: don't set a default VLAN
+	 * ID, and set the default packet priority to zero.
+	 */
+	REG_WRITE(REG_PORT(port), 0x07, 0x0000);
+
+	return 0;
+}
+
 int mv88e6xxx_setup_common(struct dsa_switch *ds)
 {
 	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
