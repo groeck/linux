@@ -107,6 +107,12 @@ int mv88e6xxx_set_eee(struct dsa_switch *ds, int port,
 int mv88e6xxx_join_bridge(struct dsa_switch *ds, int port, u32 br_port_mask);
 int mv88e6xxx_leave_bridge(struct dsa_switch *ds, int port, u32 br_port_mask);
 int mv88e6xxx_port_stp_update(struct dsa_switch *ds, int port, u8 state);
+int mv88e6xxx_port_fdb_add(struct dsa_switch *ds, int port,
+			   const unsigned char *addr, u16 vid);
+int mv88e6xxx_port_fdb_del(struct dsa_switch *ds, int port,
+			   const unsigned char *addr, u16 vid);
+int mv88e6xxx_port_fdb_getnext(struct dsa_switch *ds, int port,
+			       unsigned char *addr);
 
 extern struct dsa_switch_driver mv88e6131_switch_driver;
 extern struct dsa_switch_driver mv88e6123_61_65_switch_driver;

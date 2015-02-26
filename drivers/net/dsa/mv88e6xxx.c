@@ -743,30 +743,30 @@ int mv88e6xxx_set_eee(struct dsa_switch *ds, int port,
 	return 0;
 }
 
+static int _mv88e6xxx_atu_cmd(struct dsa_switch *ds, int fid, u16 cmd)
+{
+	int ret;
+
+	ret = _mv88e6xxx_reg_write(ds, REG_GLOBAL, 0x01, fid);
+	if (ret < 0)
+		return ret;
+
+	ret = _mv88e6xxx_reg_write(ds, REG_GLOBAL, 0x0b, cmd);
+	if (ret < 0)
+		return ret;
+
+	return _mv88e6xxx_atu_wait(ds);
+}
+
 static int _mv88e6xxx_flush_fid(struct dsa_switch *ds, int fid)
 {
 	int ret;
 
 	ret = _mv88e6xxx_atu_wait(ds);
-	if (ret < 0) {
-		netdev_err(ds->ports[fid], "ATU busy\n");
+	if (ret < 0)
 		return ret;
-	}
-	ret = _mv88e6xxx_reg_write(ds, REG_GLOBAL, 0x01, fid);
-	if (ret < 0) {
-		netdev_err(ds->ports[fid],
-			   "Failed to set FID for flush operation\n");
-		return ret;
-	}
-	ret = _mv88e6xxx_reg_write(ds, REG_GLOBAL, 0x0b, 0xe000);
-	if (ret < 0) {
-		netdev_err(ds->ports[fid],
-			   "Failed to flush forwarding database for FID %d\n",
-			   fid);
-		return ret;
-	}
 
-	return 0;
+	return _mv88e6xxx_atu_cmd(ds, fid, 0xe000);
 }
 
 static int mv88e6xxx_set_port_state(struct dsa_switch *ds, int port, u8 state)
@@ -953,6 +953,133 @@ int mv88e6xxx_port_stp_update(struct dsa_switch *ds, int port, u8 state)
 	schedule_work(&ps->bridge_work);
 
 	return 0;
+}
+
+static int __mv88e6xxx_write_addr(struct dsa_switch *ds,
+				  const unsigned char *addr)
+{
+	int i, ret;
+
+	for (i = 0; i < 3; i++) {
+		ret = _mv88e6xxx_reg_write(ds, REG_GLOBAL, 0x0d + i,
+					(addr[i * 2] << 8) | addr[i * 2 + 1]);
+		if (ret < 0)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int __mv88e6xxx_read_addr(struct dsa_switch *ds, unsigned char *addr)
+{
+	int i, ret;
+
+	for (i = 0; i < 3; i++) {
+		ret = _mv88e6xxx_reg_read(ds, REG_GLOBAL, 0x0d + i);
+		if (ret < 0)
+			return ret;
+		addr[i * 2] = ret >> 8;
+		addr[i * 2 + 1] = ret & 0xff;
+	}
+
+	return 0;
+}
+
+static int __mv88e6xxx_port_fdb_cmd(struct dsa_switch *ds, int port,
+				    const unsigned char *addr, int state)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	u8 fid = ps->fid[port];
+	int ret;
+
+	ret = _mv88e6xxx_atu_wait(ds);
+	if (ret < 0)
+		return ret;
+
+	ret = __mv88e6xxx_write_addr(ds, addr);
+	if (ret < 0)
+		return ret;
+
+	ret = _mv88e6xxx_reg_write(ds, REG_GLOBAL, 0x0c,
+				   (0x10 << port) | state);
+	if (ret)
+		return ret;
+
+	ret = _mv88e6xxx_atu_cmd(ds, fid, 0xb000);
+
+	return ret;
+}
+
+int mv88e6xxx_port_fdb_add(struct dsa_switch *ds, int port,
+			   const unsigned char *addr, u16 vid)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int ret;
+
+	mutex_lock(&ps->smi_mutex);
+	ret = __mv88e6xxx_port_fdb_cmd(ds, port, addr, 0x0e);
+	mutex_unlock(&ps->smi_mutex);
+
+	return ret;
+}
+
+int mv88e6xxx_port_fdb_del(struct dsa_switch *ds, int port,
+			   const unsigned char *addr, u16 vid)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int ret;
+
+	mutex_lock(&ps->smi_mutex);
+	ret = __mv88e6xxx_port_fdb_cmd(ds, port, addr, 0x00);
+	mutex_unlock(&ps->smi_mutex);
+
+	return ret;
+}
+
+static int __mv88e6xxx_port_getnext(struct dsa_switch *ds, int port,
+				    unsigned char *addr)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	u8 fid = ps->fid[port];
+	int ret;
+
+	ret = _mv88e6xxx_atu_wait(ds);
+	if (ret < 0)
+		return ret;
+
+	ret = __mv88e6xxx_write_addr(ds, addr);
+	if (ret < 0)
+		return ret;
+
+	do {
+		ret = _mv88e6xxx_atu_cmd(ds, fid, 0xc000);
+		if (ret < 0)
+			return ret;
+
+		ret = _mv88e6xxx_reg_read(ds, REG_GLOBAL, 0x0c);
+		if (ret < 0)
+			return ret;
+		if ((ret & 0x0f) == 0)
+			return -ENOENT;
+	} while (!(((ret >> 4) & 0xff) & (1 << port)));
+
+	ret = __mv88e6xxx_read_addr(ds, addr);
+
+	return ret;
+}
+
+/* get next entry for port */
+int mv88e6xxx_port_fdb_getnext(struct dsa_switch *ds, int port,
+			       unsigned char *addr)
+{
+	struct mv88e6xxx_priv_state *ps = ds_to_priv(ds);
+	int ret;
+
+	mutex_lock(&ps->smi_mutex);
+	ret = __mv88e6xxx_port_getnext(ds, port, addr);
+	mutex_unlock(&ps->smi_mutex);
+
+	return ret;
 }
 
 static void mv88e6xxx_bridge_work(struct work_struct *work)
