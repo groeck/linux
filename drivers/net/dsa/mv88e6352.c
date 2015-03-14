@@ -191,16 +191,18 @@ static int mv88e6352_setup_port(struct dsa_switch *ds, int p)
 	/* Port Control: disable Drop-on-Unlock, disable Drop-on-Lock,
 	 * disable Header mode, enable IGMP/MLD snooping, disable VLAN
 	 * tunneling, determine priority by looking at 802.1p and IP
-	 * priority fields (IP prio has precedence), set STP state
-	 * to Forwarding, and enable forwarding of unknown unicasts
-	 * and multicasts.
+	 * priority fields (IP prio has precedence), and set STP state
+	 * to Forwarding.
 	 *
 	 * If this is the CPU link, use DSA or EDSA tagging depending
 	 * on which tagging mode was configured.
 	 *
 	 * If this is a link to another switch, use DSA tagging mode.
+	 *
+	 * If this is the upstream port for this switch, enable
+	 * forwarding of unknown unicasts and multicasts.
 	 */
-	val = 0x043f;
+	val = 0x0433;
 	if (dsa_is_cpu_port(ds, p)) {
 		if (ds->dst->tag_protocol == DSA_TAG_PROTO_EDSA)
 			val |= 0x3300;
@@ -209,6 +211,8 @@ static int mv88e6352_setup_port(struct dsa_switch *ds, int p)
 	}
 	if (ds->dsa_port_mask & (1 << p))
 		val |= 0x0100;
+	if (p == dsa_upstream_port(ds))
+		val |= 0x000c;
 	REG_WRITE(addr, 0x04, val);
 
 	/* Port Control 1: disable trunking.  Also, if this is the
