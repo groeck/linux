@@ -2402,6 +2402,24 @@ s32 i2c_smbus_read_byte(const struct i2c_client *client)
 EXPORT_SYMBOL(i2c_smbus_read_byte);
 
 /**
+ * __i2c_smbus_read_byte - unlocked version of i2c_smbus_read_byte
+ * @client: Handle to slave device
+ *
+ * This executes the SMBus "receive byte" protocol, returning negative errno
+ * else the byte received from the device.
+ */
+s32 __i2c_smbus_read_byte(const struct i2c_client *client)
+{
+	union i2c_smbus_data data;
+	int status;
+
+	status = __i2c_smbus_xfer(client->adapter, client->addr, client->flags,
+				  I2C_SMBUS_READ, 0, I2C_SMBUS_BYTE, &data);
+	return (status < 0) ? status : data.byte;
+}
+EXPORT_SYMBOL(__i2c_smbus_read_byte);
+
+/**
  * i2c_smbus_write_byte - SMBus "send byte" protocol
  * @client: Handle to slave device
  * @value: Byte to be sent
@@ -2455,6 +2473,27 @@ s32 i2c_smbus_write_byte_data(const struct i2c_client *client, u8 command,
 			      I2C_SMBUS_BYTE_DATA, &data);
 }
 EXPORT_SYMBOL(i2c_smbus_write_byte_data);
+
+/**
+ * __i2c_smbus_write_byte_data - unlocked version of i2c_smbus_write_byte_data
+ * @client: Handle to slave device
+ * @command: Byte interpreted by slave
+ * @value: Byte being written
+ *
+ * This executes the SMBus "write byte" protocol, returning negative errno
+ * else zero on success.
+ */
+s32 __i2c_smbus_write_byte_data(const struct i2c_client *client, u8 command,
+				u8 value)
+{
+	union i2c_smbus_data data;
+
+	data.byte = value;
+	return __i2c_smbus_xfer(client->adapter, client->addr, client->flags,
+				I2C_SMBUS_WRITE, command, I2C_SMBUS_BYTE_DATA,
+				&data);
+}
+EXPORT_SYMBOL(__i2c_smbus_write_byte_data);
 
 /**
  * i2c_smbus_read_word_data - SMBus "read word" protocol
@@ -2594,7 +2633,7 @@ EXPORT_SYMBOL(i2c_smbus_write_i2c_block_data);
 static s32 i2c_smbus_xfer_emulated(struct i2c_adapter *adapter, u16 addr,
 				   unsigned short flags,
 				   char read_write, u8 command, int size,
-				   union i2c_smbus_data *data)
+				   union i2c_smbus_data *data, bool do_lock)
 {
 	/* So we need to generate a series of msgs. In the case of writing, we
 	  need to use only one message; when reading, we need two. We initialize
@@ -2729,7 +2768,8 @@ static s32 i2c_smbus_xfer_emulated(struct i2c_adapter *adapter, u16 addr,
 			msg[num-1].len++;
 	}
 
-	status = i2c_transfer(adapter, msg, num);
+	status = do_lock ? i2c_transfer(adapter, msg, num)
+			 : __i2c_transfer(adapter, msg, num);
 	if (status < 0)
 		return status;
 
@@ -2778,9 +2818,10 @@ static s32 i2c_smbus_xfer_emulated(struct i2c_adapter *adapter, u16 addr,
  * This executes an SMBus protocol operation, and returns a negative
  * errno code else zero on success.
  */
-s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr, unsigned short flags,
-		   char read_write, u8 command, int protocol,
-		   union i2c_smbus_data *data)
+static s32 do_i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
+			     unsigned short flags, char read_write, u8 command,
+			     int protocol, union i2c_smbus_data *data,
+			     bool do_lock)
 {
 	unsigned long orig_jiffies;
 	int try;
@@ -2797,7 +2838,8 @@ s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr, unsigned short flags,
 	flags &= I2C_M_TEN | I2C_CLIENT_PEC | I2C_CLIENT_SCCB;
 
 	if (adapter->algo->smbus_xfer) {
-		i2c_lock_adapter(adapter);
+		if (do_lock)
+			i2c_lock_adapter(adapter);
 
 		/* Retry automatically on arbitration loss */
 		orig_jiffies = jiffies;
@@ -2811,7 +2853,8 @@ s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr, unsigned short flags,
 				       orig_jiffies + adapter->timeout))
 				break;
 		}
-		i2c_unlock_adapter(adapter);
+		if (do_lock)
+			i2c_unlock_adapter(adapter);
 
 		if (res != -EOPNOTSUPP || !adapter->algo->master_xfer)
 			goto trace;
@@ -2822,7 +2865,7 @@ s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr, unsigned short flags,
 	}
 
 	res = i2c_smbus_xfer_emulated(adapter, addr, flags, read_write,
-				      command, protocol, data);
+				      command, protocol, data, do_lock);
 
 trace:
 	/* If enabled, the reply tracepoint is conditional on read_write. */
@@ -2833,7 +2876,24 @@ trace:
 
 	return res;
 }
+
+s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr, unsigned short flags,
+		   char read_write, u8 command, int protocol,
+		   union i2c_smbus_data *data)
+{
+	return do_i2c_smbus_xfer(adapter, addr, flags, read_write, command,
+				 protocol, data, true);
+}
 EXPORT_SYMBOL(i2c_smbus_xfer);
+
+s32 __i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
+		     unsigned short flags, char read_write, u8 command,
+		     int protocol, union i2c_smbus_data *data)
+{
+	return do_i2c_smbus_xfer(adapter, addr, flags, read_write, command,
+				 protocol, data, false);
+}
+EXPORT_SYMBOL(__i2c_smbus_xfer);
 
 #if IS_ENABLED(CONFIG_I2C_SLAVE)
 int i2c_slave_register(struct i2c_client *client, i2c_slave_cb_t slave_cb)

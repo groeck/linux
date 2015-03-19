@@ -81,15 +81,23 @@ extern s32 i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
 			  unsigned short flags, char read_write, u8 command,
 			  int size, union i2c_smbus_data *data);
 
+/* Same function, unlocked version */
+extern s32 __i2c_smbus_xfer(struct i2c_adapter *adapter, u16 addr,
+			    unsigned short flags, char read_write, u8 command,
+			    int size, union i2c_smbus_data *data);
+
 /* Now follow the 'nice' access routines. These also document the calling
    conventions of i2c_smbus_xfer. */
 
 extern s32 i2c_smbus_read_byte(const struct i2c_client *client);
+extern s32 __i2c_smbus_read_byte(const struct i2c_client *client);
 extern s32 i2c_smbus_write_byte(const struct i2c_client *client, u8 value);
 extern s32 i2c_smbus_read_byte_data(const struct i2c_client *client,
 				    u8 command);
 extern s32 i2c_smbus_write_byte_data(const struct i2c_client *client,
 				     u8 command, u8 value);
+extern s32 __i2c_smbus_write_byte_data(const struct i2c_client *client,
+				       u8 command, u8 value);
 extern s32 i2c_smbus_read_word_data(const struct i2c_client *client,
 				    u8 command);
 extern s32 i2c_smbus_write_word_data(const struct i2c_client *client,
