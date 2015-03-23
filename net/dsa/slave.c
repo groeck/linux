@@ -923,7 +923,7 @@ static int dsa_slave_phy_connect(struct dsa_slave_priv *p,
 
 	p->phy = ds->slave_mii_bus->phy_map[addr];
 	if (!p->phy)
-		return -ENODEV;
+		return 0;
 
 	/* Use already configured phy mode */
 	p->phy_interface = p->phy->interface;
