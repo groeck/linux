@@ -47,6 +47,8 @@ struct dsa_slave_priv {
 	int			old_duplex;
 
 	struct net_device	*bridge_dev;
+
+	int			nest_level;
 };
 
 /* dsa.c */

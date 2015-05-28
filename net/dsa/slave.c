@@ -308,6 +308,21 @@ static int dsa_slave_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 	return -EOPNOTSUPP;
 }
 
+static int dsa_slave_get_nest_level(struct net_device *dev)
+{
+	return ((struct dsa_slave_priv *)netdev_priv(dev))->nest_level;
+}
+
+static int dsa_slave_master_nest_level(struct net_device *master)
+{
+	int level = SINGLE_DEPTH_NESTING;
+
+	if (master->netdev_ops->ndo_get_lock_subclass)
+		level = master->netdev_ops->ndo_get_lock_subclass(master);
+
+	return level;
+}
+
 /* Return a bitmask of all ports being currently bridged within a given bridge
  * device. Note that on leave, the mask will still return the bitmask of ports
  * currently bridged, prior to port removal, and this is exactly what we want.
@@ -696,6 +711,7 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_fdb_del		= dsa_slave_fdb_del,
 	.ndo_fdb_dump		= dsa_slave_fdb_dump,
 	.ndo_do_ioctl		= dsa_slave_ioctl,
+	.ndo_get_lock_subclass	= dsa_slave_get_nest_level,
 	.ndo_get_iflink		= dsa_slave_get_iflink,
 };
 
@@ -903,6 +919,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	p->dev = slave_dev;
 	p->parent = ds;
 	p->port = port;
+	p->nest_level = dsa_slave_master_nest_level(master) + 1;
 
 	switch (ds->dst->tag_protocol) {
 #ifdef CONFIG_NET_DSA_TAG_DSA
