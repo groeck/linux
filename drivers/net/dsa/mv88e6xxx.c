@@ -1525,13 +1525,6 @@ int mv88e6xxx_port_vlan_add(struct dsa_switch *ds, int port, u16 vid,
 	if (!vid)
 		return 0;
 
-	/* The DSA port-based VLAN setup reserves FID 0 to DSA_MAX_PORTS;
-	 * we will use the next FIDs for 802.1q;
-	 * thus, forbid the last DSA_MAX_PORTS VLANs.
-	 */
-	if (vid > 4095 - DSA_MAX_PORTS)
-		return -EINVAL;
-
 	mutex_lock(&ps->smi_mutex);
 	ret = _mv88e6xxx_vtu_getnext(ds, prev_vid, &entry);
 	if (ret < 0)
@@ -1542,7 +1535,7 @@ int mv88e6xxx_port_vlan_add(struct dsa_switch *ds, int port, u16 vid,
 		memset(&entry, 0, sizeof(entry));
 		entry.valid = true;
 		entry.vid = vid;
-		entry.fid = DSA_MAX_PORTS + vid;
+		entry.fid = ps->fid[port];
 		entry.sid = 0; /* We don't use 802.1s (yet) */
 
 		/* A VTU entry must have a valid STU entry (undocumented).
