@@ -1521,10 +1521,6 @@ int mv88e6xxx_port_vlan_add(struct dsa_switch *ds, int port, u16 vid,
 	int prev_vid = vid ? vid - 1 : 4095;
 	int i, ret;
 
-	/* Bringing an interface up adds it to the VLAN 0. Ignore this. */
-	if (!vid)
-		return 0;
-
 	mutex_lock(&ps->smi_mutex);
 	ret = _mv88e6xxx_vtu_getnext(ds, prev_vid, &entry);
 	if (ret < 0)
