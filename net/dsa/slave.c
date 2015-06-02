@@ -389,6 +389,7 @@ static int dsa_slave_port_vlans_add(struct net_device *dev,
 		return -ENOTSUPP;
 
 	for (vid = vlan->vid_start; vid <= vlan->vid_end; ++vid) {
+		netdev_info(dev, "vlans_add: adding to VLAN %d\n", vid);
 		err = ds->drv->port_vlan_add(ds, p->port, vid, vlan->flags);
 		if (err)
 			break;
@@ -434,6 +435,7 @@ static int dsa_slave_port_vlans_del(struct net_device *dev,
 		return -ENOTSUPP;
 
 	for (vid = vlan->vid_start; vid <= vlan->vid_end; ++vid) {
+		netdev_info(dev, "vlans_del: removing from VLAN %d\n", vid);
 		err = ds->drv->port_vlan_del(ds, p->port, vid);
 		if (err)
 			break;
@@ -541,7 +543,7 @@ static int dsa_slave_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
 	if (!ds->drv->port_vlan_add)
 		return -EOPNOTSUPP;
 
-	netdev_dbg(dev, "adding to VLAN %d\n", vid);
+	netdev_info(dev, "rx_add_vid: adding to VLAN %d\n", vid);
 
 	return ds->drv->port_vlan_add(ds, p->port, vid, 0);
 }
@@ -555,7 +557,7 @@ static int dsa_slave_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
 	if (!ds->drv->port_vlan_del)
 		return -EOPNOTSUPP;
 
-	netdev_dbg(dev, "removing from VLAN %d\n", vid);
+	netdev_info(dev, "rx_kill_vid: removing from VLAN %d\n", vid);
 
 	return ds->drv->port_vlan_del(ds, p->port, vid);
 }
