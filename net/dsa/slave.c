@@ -378,6 +378,43 @@ static int dsa_slave_port_attr_set(struct net_device *dev,
 	return ret;
 }
 
+static int dsa_slave_port_obj_add(struct net_device *dev,
+				  struct switchdev_obj *obj)
+{
+	int err;
+
+	/*
+	 * Skip the prepare phase, since currently the DSA drivers don't need to
+	 * allocate any memory for operations and they will not fail to HW
+	 * (unless something horrible goes wrong on the MDIO bus, in which case
+	 * the prepare phase wouldn't have been able to predict anyway).
+	 */
+	if (obj->trans != SWITCHDEV_TRANS_COMMIT)
+		return 0;
+
+	switch (obj->id) {
+	default:
+		err = -ENOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
+static int dsa_slave_port_obj_del(struct net_device *dev,
+				  struct switchdev_obj *obj)
+{
+	int err;
+
+	switch (obj->id) {
+	default:
+		err = -EOPNOTSUPP;
+		break;
+	}
+
+	return err;
+}
+
 static int dsa_slave_bridge_port_join(struct net_device *dev,
 				      struct net_device *br)
 {
@@ -718,6 +755,8 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 static const struct switchdev_ops dsa_slave_switchdev_ops = {
 	.switchdev_port_attr_get	= dsa_slave_port_attr_get,
 	.switchdev_port_attr_set	= dsa_slave_port_attr_set,
+	.switchdev_port_obj_add		= dsa_slave_port_obj_add,
+	.switchdev_port_obj_del		= dsa_slave_port_obj_del,
 };
 
 static void dsa_slave_adjust_link(struct net_device *dev)
