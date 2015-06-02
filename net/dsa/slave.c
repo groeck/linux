@@ -532,15 +532,33 @@ static netdev_tx_t dsa_slave_notag_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 }
 
-static int dsa_slave_vlan_noop(struct net_device *dev, __be16 proto, u16 vid)
+static int dsa_slave_vlan_rx_add_vid(struct net_device *dev, __be16 proto,
+				     u16 vid)
 {
-	/* NETIF_F_HW_VLAN_CTAG_FILTER requires ndo_vlan_rx_add_vid and
-	 * ndo_vlan_rx_kill_vid, otherwise the VLAN acceleration is considered
-	 * buggy (see net/core/dev.c).
-	 */
-	return 0;
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->parent;
+
+	if (!ds->drv->port_vlan_add)
+		return -EOPNOTSUPP;
+
+	netdev_dbg(dev, "adding to VLAN %d\n", vid);
+
+	return ds->drv->port_vlan_add(ds, p->port, vid, 0);
 }
 
+static int dsa_slave_vlan_rx_kill_vid(struct net_device *dev, __be16 proto,
+				      u16 vid)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->parent;
+
+	if (!ds->drv->port_vlan_del)
+		return -EOPNOTSUPP;
+
+	netdev_dbg(dev, "removing from VLAN %d\n", vid);
+
+	return ds->drv->port_vlan_del(ds, p->port, vid);
+}
 
 /* ethtool operations *******************************************************/
 static int
@@ -803,8 +821,8 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_do_ioctl		= dsa_slave_ioctl,
 	.ndo_get_lock_subclass	= dsa_slave_get_nest_level,
 	.ndo_get_iflink		= dsa_slave_get_iflink,
-	.ndo_vlan_rx_add_vid	= dsa_slave_vlan_noop,
-	.ndo_vlan_rx_kill_vid	= dsa_slave_vlan_noop,
+	.ndo_vlan_rx_add_vid	= dsa_slave_vlan_rx_add_vid,
+	.ndo_vlan_rx_kill_vid	= dsa_slave_vlan_rx_kill_vid,
 	.ndo_bridge_setlink	= switchdev_port_bridge_setlink,
 	.ndo_bridge_dellink	= switchdev_port_bridge_dellink,
 };
