@@ -1768,10 +1768,12 @@ static int mv88e6xxx_setup_port(struct dsa_switch *ds, int port)
 	/* Port Association Vector: when learning source addresses
 	 * of packets, add the address to the address database using
 	 * a port bitmap that has only the bit for this port set and
-	 * the other bits clear.
+	 * the other bits clear, except for the CPU port.
 	 */
-	ret = _mv88e6xxx_reg_write(ds, REG_PORT(port), PORT_ASSOC_VECTOR,
-				   1 << port);
+	reg = BIT(port);
+	if (dsa_is_cpu_port(ds, port))
+		reg |= PORT_ASSOC_VECTOR_LOCKED_PORT;
+	ret = _mv88e6xxx_reg_write(ds, REG_PORT(port), PORT_ASSOC_VECTOR, reg);
 	if (ret)
 		goto abort;
 
