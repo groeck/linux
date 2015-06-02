@@ -9,6 +9,7 @@
  */
 
 #include <linux/etherdevice.h>
+#include <linux/if_vlan.h>
 #include <linux/list.h>
 #include <linux/slab.h>
 #include "dsa_priv.h"
@@ -23,6 +24,10 @@ static netdev_tx_t edsa_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	dev->stats.tx_packets++;
 	dev->stats.tx_bytes += skb->len;
+
+	skb = vlan_hwaccel_push_inside(skb);
+	if (unlikely(!skb))
+		return -ENOMEM;
 
 	/*
 	 * Convert the outermost 802.1q tag to a DSA tag and prepend
