@@ -378,6 +378,25 @@ static int dsa_slave_port_attr_set(struct net_device *dev,
 	return ret;
 }
 
+static int dsa_slave_port_vlans_add(struct net_device *dev,
+				    struct switchdev_obj_vlan *vlan)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->parent;
+	int vid, err = 0;
+
+	if (!ds->drv->port_vlan_add)
+		return -ENOTSUPP;
+
+	for (vid = vlan->vid_start; vid <= vlan->vid_end; ++vid) {
+		err = ds->drv->port_vlan_add(ds, p->port, vid, vlan->flags);
+		if (err)
+			break;
+	}
+
+	return err;
+}
+
 static int dsa_slave_port_obj_add(struct net_device *dev,
 				  struct switchdev_obj *obj)
 {
@@ -393,9 +412,31 @@ static int dsa_slave_port_obj_add(struct net_device *dev,
 		return 0;
 
 	switch (obj->id) {
+	case SWITCHDEV_OBJ_PORT_VLAN:
+		err = dsa_slave_port_vlans_add(dev, &obj->u.vlan);
+		break;
 	default:
 		err = -ENOTSUPP;
 		break;
+	}
+
+	return err;
+}
+
+static int dsa_slave_port_vlans_del(struct net_device *dev,
+				    struct switchdev_obj_vlan *vlan)
+{
+	struct dsa_slave_priv *p = netdev_priv(dev);
+	struct dsa_switch *ds = p->parent;
+	int vid, err = 0;
+
+	if (!ds->drv->port_vlan_del)
+		return -ENOTSUPP;
+
+	for (vid = vlan->vid_start; vid <= vlan->vid_end; ++vid) {
+		err = ds->drv->port_vlan_del(ds, p->port, vid);
+		if (err)
+			break;
 	}
 
 	return err;
@@ -407,6 +448,9 @@ static int dsa_slave_port_obj_del(struct net_device *dev,
 	int err;
 
 	switch (obj->id) {
+	case SWITCHDEV_OBJ_PORT_VLAN:
+		err = dsa_slave_port_vlans_del(dev, &obj->u.vlan);
+		break;
 	default:
 		err = -EOPNOTSUPP;
 		break;
@@ -486,6 +530,15 @@ static netdev_tx_t dsa_slave_notag_xmit(struct sk_buff *skb,
 	dev_queue_xmit(skb);
 
 	return NETDEV_TX_OK;
+}
+
+static int dsa_slave_vlan_noop(struct net_device *dev, __be16 proto, u16 vid)
+{
+	/* NETIF_F_HW_VLAN_CTAG_FILTER requires ndo_vlan_rx_add_vid and
+	 * ndo_vlan_rx_kill_vid, otherwise the VLAN acceleration is considered
+	 * buggy (see net/core/dev.c).
+	 */
+	return 0;
 }
 
 
@@ -750,6 +803,10 @@ static const struct net_device_ops dsa_slave_netdev_ops = {
 	.ndo_do_ioctl		= dsa_slave_ioctl,
 	.ndo_get_lock_subclass	= dsa_slave_get_nest_level,
 	.ndo_get_iflink		= dsa_slave_get_iflink,
+	.ndo_vlan_rx_add_vid	= dsa_slave_vlan_noop,
+	.ndo_vlan_rx_kill_vid	= dsa_slave_vlan_noop,
+	.ndo_bridge_setlink	= switchdev_port_bridge_setlink,
+	.ndo_bridge_dellink	= switchdev_port_bridge_dellink,
 };
 
 static const struct switchdev_ops dsa_slave_switchdev_ops = {
@@ -940,7 +997,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 	if (slave_dev == NULL)
 		return -ENOMEM;
 
-	slave_dev->features = master->vlan_features;
+	slave_dev->features = master->vlan_features | NETIF_F_VLAN_FEATURES;
 	slave_dev->ethtool_ops = &dsa_slave_ethtool_ops;
 	eth_hw_addr_inherit(slave_dev, master);
 	slave_dev->tx_queue_len = 0;
@@ -952,7 +1009,7 @@ int dsa_slave_create(struct dsa_switch *ds, struct device *parent,
 
 	SET_NETDEV_DEV(slave_dev, parent);
 	slave_dev->dev.of_node = ds->pd->port_dn[port];
-	slave_dev->vlan_features = master->vlan_features;
+	slave_dev->vlan_features = slave_dev->features;
 
 	p = netdev_priv(slave_dev);
 	p->dev = slave_dev;

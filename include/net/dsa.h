@@ -302,6 +302,13 @@ struct dsa_switch_driver {
 			   const unsigned char *addr, u16 vid);
 	int	(*fdb_getnext)(struct dsa_switch *ds, int port,
 			       unsigned char *addr, bool *is_static);
+
+	/*
+	 * VLAN support
+	 */
+	int	(*port_vlan_add)(struct dsa_switch *ds, int port, u16 vid,
+				 u16 bridge_flags);
+	int	(*port_vlan_del)(struct dsa_switch *ds, int port, u16 vid);
 };
 
 void register_switch_driver(struct dsa_switch_driver *type);
